@@ -1,31 +1,24 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui/button';
+import { useRef, useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog';
-import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Printer, CheckCircle, Receipt } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Printer, ShoppingCart, X, CheckCircle } from 'lucide-react';
+import { BranchConfig } from '@/types/database';
 import { formatCurrency } from '@/lib/utils';
-import { CartItem } from '@/types/database';
 
-interface BranchConfig {
-  business_name: string;
-  company_name: string;
-  company_ruc: string;
-  company_address: string;
-  company_phone: string;
-  establishment_code: string;
-  emission_point: string;
-  receipt_header?: string;
-  receipt_footer?: string;
-  iva_percent: number;
+interface CartItem {
+  product_id: string;
+  product_name: string;
+  product_type: 'A' | 'B' | 'C' | 'D';
+  quantity: number;
+  unit_price: number;
+  total: number;
 }
 
 interface SaleReceiptPreviewProps {
@@ -33,17 +26,20 @@ interface SaleReceiptPreviewProps {
   onClose: () => void;
   onNewSale: () => void;
   documentNumber: string;
+  documentType?: string;
   items: CartItem[];
   subtotal: number;
   iva: number;
   total: number;
-  paymentMethod: 'cash' | 'card' | 'transfer' | 'credit';
-  cashReceived?: number;
-  change?: number;
+  paymentMethod: 'cash' | 'transfer' | 'card';
+  cashReceived: number;
+  change: number;
   customerName: string;
+  customerPhone?: string;
   branchConfig: BranchConfig | null;
   userName?: string;
   saleDate: string;
+  ivaPercent?: number;
 }
 
 export function SaleReceiptPreview({
@@ -51,6 +47,7 @@ export function SaleReceiptPreview({
   onClose,
   onNewSale,
   documentNumber,
+  documentType = 'NOTA DE VENTA',
   items,
   subtotal,
   iva,
@@ -59,227 +56,503 @@ export function SaleReceiptPreview({
   cashReceived,
   change,
   customerName,
+  customerPhone,
   branchConfig,
   userName,
   saleDate,
+  ivaPercent = 15,
 }: SaleReceiptPreviewProps) {
-  const [mounted, setMounted] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const cleanText = (text: string | undefined | null) => {
+    if (!text) return '';
+    return text.replace(/\\n/g, '\n');
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString('es-EC', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
 
   const getPaymentMethodLabel = (method: string) => {
-    const methods: Record<string, string> = {
-      cash: 'Efectivo',
-      card: 'Tarjeta',
-      transfer: 'Transferencia',
-      credit: 'Crédito',
-    };
-    return methods[method] || method;
+    switch (method) {
+      case 'cash': return 'EFECTIVO';
+      case 'transfer': return 'TRANSFERENCIA';
+      case 'card': return 'TARJETA';
+      default: return method;
+    }
   };
 
   const handlePrint = () => {
-    window.print();
-  };
+    setIsPrinting(true);
+    
+    // Crear iframe oculto (más confiable que window.open)
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
 
-  if (!mounted) return null;
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
+      setIsPrinting(false);
+      return;
+    }
+
+    // Datos
+    const businessName = branchConfig?.business_name || 'TALLER MOTORCITO';
+    const ruc = branchConfig?.ruc || '';
+    const address = branchConfig?.company_address || '';
+    const phone = branchConfig?.company_phone || '';
+    const email = branchConfig?.company_email || '';
+    const header = cleanText(branchConfig?.receipt_header);
+    const footer = cleanText(branchConfig?.receipt_footer) || '¡Gracias por su preferencia!\nORIGINAL: CLIENTE / COPIA: EMISOR';
+    const displayIvaPercent = ivaPercent || branchConfig?.iva_percent || 15;
+
+    // Construir HTML completo con estilos INLINE 100%
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${documentType} - ${documentNumber}</title>
+        <style>
+          /* RESET Y BASE */
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { 
+            font-family: 'Courier New', Courier, monospace; 
+            font-size: 12px; 
+            line-height: 1.4; 
+            width: 80mm; 
+            padding: 3mm; 
+            color: #000;
+            background: #fff;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          
+          /* HEADER */
+          .header {
+            text-align: center;
+            border-bottom: 3px double #000;
+            padding-bottom: 10px;
+            margin-bottom: 10px;
+          }
+          .business-name { 
+            font-size: 16px; 
+            font-weight: bold; 
+            text-transform: uppercase;
+            margin-bottom: 5px;
+          }
+          .business-info {
+            font-size: 11px;
+            line-height: 1.5;
+          }
+          .ruc-box {
+            border: 2px solid #000;
+            display: inline-block;
+            padding: 2px 8px;
+            margin: 5px 0;
+            font-weight: bold;
+            font-size: 11px;
+          }
+          
+          /* CUSTOM HEADER */
+          .custom-header {
+            text-align: center;
+            font-style: italic;
+            font-size: 10px;
+            margin: 8px 0;
+            padding: 5px;
+            background: #f5f5f5;
+            border-left: 3px solid #000;
+          }
+          
+          /* DOCUMENTO BOX */
+          .doc-box {
+            border: 2px solid #000;
+            padding: 10px;
+            margin: 10px 0;
+            text-align: center;
+            background: #fafafa;
+          }
+          .doc-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 3px;
+          }
+          .doc-type {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 3px;
+          }
+          .doc-number {
+            font-size: 13px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            color: #c00;
+          }
+          
+          /* INFO SECTION */
+          .info-box {
+            margin: 10px 0;
+            font-size: 11px;
+          }
+          .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 3px 0;
+            border-bottom: 1px dotted #ccc;
+            padding-bottom: 2px;
+          }
+          .customer-box {
+            border: 1px dashed #999;
+            padding: 8px;
+            margin: 8px 0;
+            background: #fff;
+          }
+          .customer-label {
+            font-size: 9px;
+            text-transform: uppercase;
+            color: #666;
+            font-weight: bold;
+          }
+          .customer-name {
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 12px;
+          }
+          
+          /* PRODUCTOS */
+          .items-title {
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            border-bottom: 2px solid #000;
+            padding-bottom: 5px;
+            margin: 15px 0 10px 0;
+          }
+          .item {
+            margin: 8px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #eee;
+          }
+          .item-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 3px;
+          }
+          .item-name {
+            flex: 1;
+            font-weight: bold;
+            padding-right: 10px;
+          }
+          .item-qty {
+            background: #000;
+            color: #fff;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 10px;
+            min-width: 20px;
+            text-align: center;
+          }
+          .item-details {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10px;
+            color: #666;
+          }
+          .item-total {
+            font-weight: bold;
+            color: #000;
+          }
+          
+          /* TOTALES */
+          .totals-box {
+            margin-top: 15px;
+            border-top: 2px solid #000;
+            padding-top: 10px;
+          }
+          .total-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+            font-size: 11px;
+          }
+          .total-final {
+            font-size: 14px;
+            font-weight: bold;
+            border-top: 2px solid #000;
+            border-bottom: 2px solid #000;
+            padding: 8px 0;
+            margin: 10px 0;
+            display: flex;
+            justify-content: space-between;
+          }
+          .total-amount {
+            color: #c00;
+            font-size: 16px;
+          }
+          
+          /* PAYMENT */
+          .payment-box {
+            background: #f0f0f0;
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: center;
+            margin: 10px 0;
+            font-weight: bold;
+            text-transform: uppercase;
+          }
+          .change-box {
+            background: #e8f4f8;
+            border: 1px solid #4a90e2;
+            padding: 8px;
+            margin: 8px 0;
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+          }
+          
+          /* FOOTER */
+          .footer {
+            margin-top: 20px;
+            text-align: center;
+            font-size: 10px;
+            line-height: 1.5;
+            white-space: pre-line;
+            border-top: 1px dashed #999;
+            padding-top: 10px;
+          }
+          .legal-footer {
+            margin-top: 10px;
+            font-size: 9px;
+            color: #666;
+            text-align: center;
+          }
+          .cut-line {
+            border-top: 2px dashed #999;
+            margin: 15px 0 5px 0;
+            position: relative;
+          }
+          .cut-line::after {
+            content: "✂";
+            position: absolute;
+            left: 50%;
+            top: -10px;
+            background: #fff;
+            padding: 0 5px;
+            transform: translateX(-50%);
+          }
+          
+          @media print {
+            body { width: 80mm; padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <!-- HEADER -->
+        <div class="header">
+          <div class="business-name">${businessName}</div>
+          ${ruc ? `<div class="ruc-box">RUC: ${ruc}</div>` : ''}
+          <div class="business-info">
+            ${address ? `<div>${address}</div>` : ''}
+            ${phone ? `<div>Tel: ${phone}</div>` : ''}
+            ${email ? `<div>${email}</div>` : ''}
+          </div>
+        </div>
+
+        ${header ? `<div class="custom-header">${header}</div>` : ''}
+
+        <!-- DOCUMENTO -->
+        <div class="doc-box">
+          <div class="doc-label">DOCUMENTO</div>
+          <div class="doc-type">${documentType}</div>
+          <div class="doc-number">N° ${documentNumber}</div>
+        </div>
+
+        <!-- INFO -->
+        <div class="info-box">
+          <div class="info-row">
+            <span><strong>Fecha:</strong></span>
+            <span>${formatDate(saleDate)}</span>
+          </div>
+          <div class="info-row">
+            <span><strong>Cajero:</strong></span>
+            <span>${userName || 'N/A'}</span>
+          </div>
+          <div class="customer-box">
+            <div class="customer-label">CLIENTE</div>
+            <div class="customer-name">${customerName.toUpperCase()}</div>
+            ${customerPhone ? `<div style="font-size:10px; margin-top:3px;">Tel: ${customerPhone}</div>` : ''}
+          </div>
+        </div>
+
+        <!-- PRODUCTOS -->
+        <div class="items-title">DETALLE DE PRODUCTOS</div>
+        ${items.map(item => `
+          <div class="item">
+            <div class="item-header">
+              <span class="item-name">${item.product_name}</span>
+              <span class="item-qty">${item.quantity}</span>
+            </div>
+            <div class="item-details">
+              <span>${formatCurrency(item.unit_price)} c/u</span>
+              <span class="item-total">${formatCurrency(item.total)}</span>
+            </div>
+          </div>
+        `).join('')}
+
+        ${items.length === 0 ? '<div style="text-align:center; color:#999; padding:10px;">No hay productos</div>' : ''}
+
+        <!-- TOTALES -->
+        <div class="totals-box">
+          <div class="total-row">
+            <span>Subtotal:</span>
+            <span>${formatCurrency(subtotal)}</span>
+          </div>
+          <div class="total-row">
+            <span>IVA (${displayIvaPercent}%):</span>
+            <span>${formatCurrency(iva)}</span>
+          </div>
+          <div class="total-final">
+            <span>TOTAL:</span>
+            <span class="total-amount">${formatCurrency(total)}</span>
+          </div>
+          
+          <div class="payment-box">
+            MÉTODO DE PAGO: ${getPaymentMethodLabel(paymentMethod)}
+          </div>
+
+          ${paymentMethod === 'cash' && change > 0 ? `
+            <div class="change-box">
+              <span>CAMBIO:</span>
+              <span>${formatCurrency(change)}</span>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- FOOTER -->
+        <div class="footer">${footer}</div>
+        
+        <div class="legal-footer">
+          --- Mi Taller Mecánico ---<br>
+          Documento generado electrónicamente
+        </div>
+
+        <div class="cut-line"></div>
+      </body>
+      </html>
+    `;
+
+    doc.open();
+    doc.write(htmlContent);
+    doc.close();
+
+    // Esperar a que todo cargue y luego imprimir
+    iframe.onload = () => {
+      setTimeout(() => {
+        iframe.contentWindow?.print();
+        
+        // Limpiar después de imprimir
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+          setIsPrinting(false);
+          setShowSuccess(true);
+          setTimeout(() => setShowSuccess(false), 2000);
+        }, 1000);
+      }, 500); // Dar tiempo a que renderice
+    };
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-[400px] max-h-[90vh] p-0 gap-0 flex flex-col print:max-w-none print:w-[80mm] print:p-0 print:m-0 print:border-0 print:max-h-none">
-        {/* Header (oculto en print) */}
-        <div className="print:hidden flex-shrink-0">
-          <DialogHeader className="p-6 pb-2">
-            <DialogTitle className="flex items-center gap-2">
-              <Receipt className="h-5 w-5" />
-              Venta Completada - {documentNumber}
-            </DialogTitle>
-          </DialogHeader>
-        </div>
+      <DialogContent className="sm:max-w-lg max-h-[95vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5" />
+              {documentType} - {documentNumber}
+            </span>
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </DialogTitle>
+        </DialogHeader>
 
-        {/* ScrollArea para el ticket */}
-        <ScrollArea className="flex-1 overflow-y-auto print:overflow-visible">
-          <div className="bg-white p-6 print:p-2 print:w-[80mm] print:max-w-[80mm] print:m-0 print:shadow-none">
-            {/* Estilos de impresión */}
-            <style jsx global>{`
-              @media print {
-                @page {
-                  size: 80mm auto;
-                  margin: 0;
-                }
-                body * {
-                  visibility: hidden;
-                }
-                .print-area, .print-area * {
-                  visibility: visible;
-                }
-                .print-area {
-                  position: absolute;
-                  left: 0;
-                  top: 0;
-                  width: 80mm;
-                  padding: 5mm;
-                }
-                .no-print {
-                  display: none !important;
-                }
-              }
-            `}</style>
+        {/* Vista previa simple (sin complicaciones) */}
+        <div className="bg-gray-100 p-4 rounded-lg my-4 border-2 border-dashed border-gray-300">
+          <div className="bg-white p-4 shadow-lg mx-auto" style={{ width: '100%', maxWidth: '320px', fontFamily: 'monospace', fontSize: '12px' }}>
+            <div className="text-center border-b-2 border-black pb-2 mb-2">
+              <div className="font-bold text-lg uppercase">{branchConfig?.business_name || 'TALLER'}</div>
+              {branchConfig?.ruc && <div className="text-xs">RUC: {branchConfig.ruc}</div>}
+            </div>
+            
+            <div className="text-center border border-black p-2 mb-2">
+              <div className="font-bold">{documentType}</div>
+              <div className="font-bold text-red-600">N° {documentNumber}</div>
+            </div>
 
-            <div className="print-area space-y-3 text-sm">
-              {/* Header Empresa */}
-              <div className="text-center space-y-1">
-                <h2 className="font-bold text-base uppercase tracking-tight">
-                  {branchConfig?.business_name || branchConfig?.company_name || 'TALLER WEB'}
-                </h2>
-                <p className="text-xs text-gray-600">
-                  RUC: {branchConfig?.company_ruc || '0000000000000'}
-                </p>
-                <p className="text-xs text-gray-600 whitespace-pre-line">
-                  {branchConfig?.company_address || ''}
-                </p>
-                <p className="text-xs text-gray-600">
-                  Tel: {branchConfig?.company_phone || ''}
-                </p>
-                
-                {branchConfig?.receipt_header && (
-                  <p className="text-xs text-gray-600 mt-2 italic">
-                    {branchConfig.receipt_header}
-                  </p>
-                )}
+            <div className="space-y-1 text-xs mb-3">
+              <div className="flex justify-between"><span>Fecha:</span><span>{formatDate(saleDate)}</span></div>
+              <div className="flex justify-between"><span>Cliente:</span><span className="uppercase">{customerName}</span></div>
+            </div>
+
+            <div className="border-b border-black font-bold text-xs mb-1 flex justify-between">
+              <span>Producto</span>
+              <span>Total</span>
+            </div>
+            
+            {items.map((item, i) => (
+              <div key={i} className="flex justify-between text-xs py-1 border-b border-gray-200">
+                <span>{item.quantity}x {item.product_name.substring(0, 15)}</span>
+                <span>{formatCurrency(item.total)}</span>
               </div>
+            ))}
 
-              <Separator className="border-dashed border-gray-400" />
-
-              {/* Info Documento */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">Documento:</span>
-                  <span className="font-mono font-bold text-xs">
-                    {documentNumber || '001-001-000000001'}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">Fecha:</span>
-                  <span className="text-xs">{new Date(saleDate).toLocaleString('es-EC')}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">Cajero:</span>
-                  <span className="truncate max-w-[120px] text-xs">{userName || 'Admin'}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">Cliente:</span>
-                  <span className="truncate max-w-[150px] text-xs">{customerName}</span>
-                </div>
-              </div>
-
-              <Separator className="border-dashed border-gray-400" />
-
-              {/* Items */}
-              <div className="space-y-2">
-                <div className="text-xs font-bold uppercase tracking-wider text-gray-500 border-b border-gray-300 pb-1">
-                  Descripción
-                </div>
-                {items.map((item, index) => (
-                  <div key={index} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="flex-1 pr-2 text-xs leading-tight">{item.product_name}</span>
-                      <span className="font-mono text-xs">x{item.quantity}</span>
-                    </div>
-                    <div className="flex justify-between text-xs pl-2">
-                      <span className="text-gray-500 text-xs">
-                        {formatCurrency(item.unit_price)} c/u
-                      </span>
-                      <span className="font-mono font-medium text-xs">
-                        {formatCurrency(item.total)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <Separator className="border-dashed border-gray-400" />
-
-              {/* Totales */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">Subtotal:</span>
-                  <span className="font-mono text-xs">{formatCurrency(subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-600">
-                    IVA ({branchConfig?.iva_percent || 15}%):
-                  </span>
-                  <span className="font-mono text-xs">{formatCurrency(iva)}</span>
-                </div>
-                <div className="flex justify-between text-sm font-bold mt-2 pt-2 border-t border-dashed border-gray-400">
-                  <span>TOTAL:</span>
-                  <span className="font-mono">{formatCurrency(total)}</span>
-                </div>
-              </div>
-
-              {/* Pago */}
-              <div className="space-y-1 bg-gray-50 p-2 rounded text-xs">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Método de pago:</span>
-                  <span className="uppercase font-medium">{getPaymentMethodLabel(paymentMethod)}</span>
-                </div>
-                {paymentMethod === 'cash' && cashReceived !== undefined && (
-                  <>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Recibido:</span>
-                      <span className="font-mono">{formatCurrency(cashReceived)}</span>
-                    </div>
-                    {change !== undefined && change >= 0 && (
-                      <div className="flex justify-between font-bold text-green-700">
-                        <span>Cambio:</span>
-                        <span className="font-mono">{formatCurrency(change)}</span>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              <Separator className="border-dashed border-gray-400" />
-
-              {/* Footer */}
-              <div className="text-center space-y-2 pt-2">
-                <div className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">
-                  *** Gracias por su compra ***
-                </div>
-                
-                {branchConfig?.receipt_footer && (
-                  <p className="text-[10px] text-gray-500 whitespace-pre-line">
-                    {branchConfig.receipt_footer}
-                  </p>
-                )}
-                
-                <div className="text-[9px] text-gray-400 mt-4">
-                  Documento sin valor tributario
-                </div>
-                
-                <div className="mt-6 pt-4">
-                  <div className="border-t border-gray-400 w-32 mx-auto pt-1">
-                    <span className="text-[10px] text-gray-500">Firma Cliente</span>
-                  </div>
-                </div>
+            <div className="mt-3 space-y-1 text-xs">
+              <div className="flex justify-between"><span>Subtotal:</span><span>{formatCurrency(subtotal)}</span></div>
+              <div className="flex justify-between"><span>IVA ({ivaPercent || 15}%):</span><span>{formatCurrency(iva)}</span></div>
+              <div className="flex justify-between font-bold text-base border-t-2 border-black pt-1 mt-1">
+                <span>TOTAL:</span>
+                <span className="text-red-600">{formatCurrency(total)}</span>
               </div>
             </div>
           </div>
-        </ScrollArea>
+        </div>
 
-        {/* Botones fijos abajo (ocultos en print) */}
-        <DialogFooter className="p-4 pt-2 border-t bg-gray-50 flex-row gap-2 print:hidden flex-shrink-0">
-          <Button variant="outline" onClick={handlePrint} className="flex-1">
-            <Printer className="h-4 w-4 mr-2" />
-            Imprimir
+        {/* Botones */}
+        <div className="flex flex-col gap-2">
+          <Button 
+            onClick={handlePrint} 
+            className="w-full bg-blue-600 hover:bg-blue-700 h-12 text-lg font-bold"
+            disabled={isPrinting}
+          >
+            {showSuccess ? <CheckCircle className="mr-2 h-5 w-5" /> : <Printer className="mr-2 h-5 w-5" />}
+            {isPrinting ? 'Preparando...' : showSuccess ? '¡Listo!' : 'Imprimir Ticket'}
           </Button>
-          <Button onClick={onNewSale} className="flex-1 bg-green-600 hover:bg-green-700">
-            <CheckCircle className="h-4 w-4 mr-2" />
-            Nueva Venta
-          </Button>
-        </DialogFooter>
+          
+          <div className="flex gap-2">
+            <Button onClick={onNewSale} variant="outline" className="flex-1">
+              <ShoppingCart className="mr-2 h-4 w-4" />
+              Nueva Venta
+            </Button>
+            <Button onClick={onClose} variant="outline" className="flex-1">
+              Cerrar
+            </Button>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );

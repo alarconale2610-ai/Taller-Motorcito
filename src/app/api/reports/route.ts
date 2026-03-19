@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic'; // Asegura que no se pre-renderice estáticamente
+
 import { NextRequest, NextResponse } from 'next/server';
 import { generateCompleteReport } from '@/lib/excel-reports';
 import { createClient } from '@/lib/supabase-server';
@@ -6,16 +8,16 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const branchId = searchParams.get('branchId');
-    
+
     if (!branchId) {
       return NextResponse.json({ error: 'Branch ID requerido' }, { status: 400 });
     }
 
     // Verificar autenticación
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
 
@@ -32,7 +34,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Error generando reporte:', error);
     return NextResponse.json(
-      { error: 'Error al generar el reporte' }, 
+      { error: 'Error al generar el reporte' },
       { status: 500 }
     );
   }

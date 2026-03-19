@@ -34,7 +34,7 @@ export async function createSale(data: {
     unit_price: number;
     total: number;
   }>;
-  payment_method: 'cash' | 'card' | 'transfer' | 'credit';
+  payment_method: 'cash' | 'transfer'; // Eliminado 'card' | 'credit' para mini tienda
   subtotal: number;
   iva_amount: number;
   total: number;
@@ -53,7 +53,7 @@ export async function createSale(data: {
       throw new Error('Error al obtener configuración de sucursal: ' + configError?.message);
     }
 
-    // 2. Generar número de documento único
+    // 2. Generar número de documento único (siempre nota_venta para mini tienda)
     const { data: documentNumber, error: docError } = await supabase.rpc(
       'get_next_document_number',
       {
@@ -69,7 +69,6 @@ export async function createSale(data: {
     }
 
     // 3. Crear venta completa con función atómica (incluye stock)
-    // IMPORTANTE: Pasar items directamente como array, no como JSON.stringify
     const { data: saleId, error: saleError } = await supabase.rpc(
       'create_sale_complete',
       {
@@ -82,7 +81,7 @@ export async function createSale(data: {
         p_iva_amount: data.iva_amount,
         p_total: data.total,
         p_document_number: documentNumber,
-        p_items: data.items  // <-- SIN JSON.stringify()
+        p_items: data.items
       }
     );
 

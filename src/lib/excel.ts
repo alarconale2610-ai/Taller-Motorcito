@@ -29,18 +29,17 @@ export function exportProductsToExcel(products: Product[], branchName: string): 
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
-  
-  // Ajustar anchos de columna
+
   const colWidths = [
-    { wch: 20 }, // Código de Barras
-    { wch: 30 }, // Nombre
-    { wch: 40 }, // Descripción
-    { wch: 15 }, // Tipo
-    { wch: 15 }, // Precio Costo
-    { wch: 15 }, // Precio Venta
-    { wch: 10 }, // Stock
-    { wch: 15 }, // Stock Mínimo
-    { wch: 15 }, // Unidad
+    { wch: 20 },
+    { wch: 30 },
+    { wch: 40 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 10 },
+    { wch: 15 },
+    { wch: 15 },
   ];
   ws['!cols'] = colWidths;
 
@@ -66,9 +65,9 @@ export function downloadTemplate(): void {
   const ws = XLSX.utils.json_to_sheet(template);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Template');
-  
+
   ws['!cols'] = [
-    { wch: 20 }, { wch: 30 }, { wch: 40 }, { wch: 15 }, 
+    { wch: 20 }, { wch: 30 }, { wch: 40 }, { wch: 15 },
     { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 15 }
   ];
 
@@ -78,7 +77,7 @@ export function downloadTemplate(): void {
 export function parseExcelFile(file: File): Promise<ExcelProductRow[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    
+
     reader.onload = (e) => {
       try {
         const data = e.target?.result;
@@ -91,7 +90,7 @@ export function parseExcelFile(file: File): Promise<ExcelProductRow[]> {
         reject(new Error('Error al leer archivo Excel'));
       }
     };
-    
+
     reader.onerror = () => reject(new Error('Error al leer archivo'));
     reader.readAsBinaryString(file);
   });
@@ -99,39 +98,39 @@ export function parseExcelFile(file: File): Promise<ExcelProductRow[]> {
 
 export function validateProductRow(row: any, index: number): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
-  
+
   if (!row['Nombre'] || String(row['Nombre']).trim() === '') {
     errors.push(`Fila ${index + 1}: Nombre es requerido`);
   }
-  
+
   const tipo = row['Tipo (A/B/C/D)'];
   if (!tipo || !['A', 'B', 'C', 'D'].includes(String(tipo).toUpperCase())) {
     errors.push(`Fila ${index + 1}: Tipo debe ser A, B, C o D`);
   }
-  
+
   const costo = Number(row['Precio Costo']);
   if (isNaN(costo) || costo < 0) {
     errors.push(`Fila ${index + 1}: Precio Costo debe ser un número positivo`);
   }
-  
+
   const venta = Number(row['Precio Venta']);
   if (isNaN(venta) || venta < 0) {
     errors.push(`Fila ${index + 1}: Precio Venta debe ser un número positivo`);
   }
-  
+
   const stock = Number(row['Stock']);
   if (isNaN(stock) || stock < 0) {
     errors.push(`Fila ${index + 1}: Stock debe ser un número positivo`);
   }
-  
+
   const stockMin = Number(row['Stock Mínimo']);
   if (isNaN(stockMin) || stockMin < 0) {
     errors.push(`Fila ${index + 1}: Stock Mínimo debe ser un número positivo`);
   }
-  
+
   if (!row['Unidad'] || String(row['Unidad']).trim() === '') {
     errors.push(`Fila ${index + 1}: Unidad es requerida`);
   }
-  
+
   return { valid: errors.length === 0, errors };
 }
