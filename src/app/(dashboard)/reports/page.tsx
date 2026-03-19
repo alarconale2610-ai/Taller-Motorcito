@@ -8,7 +8,7 @@ import {
 import {
   Download, Filter, Package, ShoppingCart, Coffee, Wrench,
   Calendar, TrendingUp, DollarSign, Users, AlertCircle, Loader2, Info,
-  FileSpreadsheet, X, ChevronDown
+  FileSpreadsheet, X
 } from 'lucide-react';
 import { format, subDays, startOfDay, endOfDay, parseISO } from 'date-fns';
 import { useBranchStore } from '@/store/useBranchStore';
@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
+import { Sale, Product, Worker, WorkerConsumption } from '@/types/database';
 
 type ReportType = 'sales' | 'inventory' | 'orders' | 'internal_consumption';
 type DateRange = 'today' | 'week' | 'month' | 'custom';
@@ -34,7 +35,7 @@ export default function ReportsPage() {
   const [dateRange, setDateRange] = useState<DateRange>('week');
   const [isLoading, setIsLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  
+
   // Estados para el modal de exportación
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportMode, setExportMode] = useState<ExportMode>('all');
@@ -108,7 +109,8 @@ export default function ReportsPage() {
         if (error) throw error;
 
         if (sales && sales.length > 0) {
-          const grouped = sales.reduce((acc: any, sale: any) => {
+          const typedSales = sales as unknown as Sale[];
+          const grouped = typedSales.reduce((acc: any, sale: Sale) => {
             const date = format(parseISO(sale.created_at), 'dd/MM');
             if (!acc[date]) acc[date] = { date, total: 0, count: 0 };
             acc[date].total += sale.total;
@@ -116,18 +118,18 @@ export default function ReportsPage() {
             return acc;
           }, {});
 
-          const paymentMethods = sales.reduce((acc: any, sale: any) => {
+          const paymentMethods = typedSales.reduce((acc: any, sale: Sale) => {
             acc[sale.payment_method] = (acc[sale.payment_method] || 0) + sale.total;
             return acc;
           }, {});
 
           setSalesData({
-            total: sales.reduce((sum, s) => sum + s.total, 0),
-            count: sales.length,
-            averageTicket: sales.length > 0 ? sales.reduce((sum, s) => sum + s.total, 0) / sales.length : 0,
+            total: typedSales.reduce((sum, s) => sum + s.total, 0),
+            count: typedSales.length,
+            averageTicket: typedSales.length > 0 ? typedSales.reduce((sum, s) => sum + s.total, 0) / typedSales.length : 0,
             chartData: Object.values(grouped),
             paymentMethods,
-            sales
+            sales: typedSales
           });
         } else {
           setSalesData({ total: 0, count: 0, averageTicket: 0, chartData: [], paymentMethods: {}, sales: [] });
@@ -142,18 +144,19 @@ export default function ReportsPage() {
         if (error) throw error;
 
         if (products) {
-          const byType = products.reduce((acc: any, p: any) => {
+          const typedProducts = products as unknown as Product[];
+          const byType = typedProducts.reduce((acc: any, p: Product) => {
             acc[p.type] = (acc[p.type] || 0) + 1;
             return acc;
           }, {});
 
           setInventoryData({
-            totalProducts: products.length,
-            lowStock: products.filter((p: any) => p.stock > 0 && p.stock < 5).length,
-            outOfStock: products.filter((p: any) => p.stock === 0).length,
-            totalValue: products.reduce((sum, p) => sum + (p.sale_price * p.stock), 0),
+            totalProducts: typedProducts.length,
+            lowStock: typedProducts.filter((p: Product) => p.stock > 0 && p.stock < 5).length,
+            outOfStock: typedProducts.filter((p: Product) => p.stock === 0).length,
+            totalValue: typedProducts.reduce((sum, p) => sum + (p.sale_price * p.stock), 0),
             byType,
-            topStock: [...products].sort((a: any, b: any) => b.stock - a.stock).slice(0, 10)
+            topStock: [...typedProducts].sort((a: Product, b: Product) => b.stock - a.stock).slice(0, 10)
           });
         }
       }
@@ -182,7 +185,8 @@ export default function ReportsPage() {
           return;
         }
 
-        const workerIds = workers.map(w => w.id);
+        const typedWorkers = workers as unknown as Worker[];
+        const workerIds = typedWorkers.map(w => w.id);
 
         const { data: consumptions, error: consError } = await supabase
           .from('worker_consumptions')
@@ -193,11 +197,12 @@ export default function ReportsPage() {
         if (consError) throw consError;
 
         if (consumptions && consumptions.length > 0) {
-          const pending = consumptions.filter((c: any) => c.status === 'pending');
-          const paid = consumptions.filter((c: any) => c.status === 'paid');
+          const typedConsumptions = consumptions as unknown as WorkerConsumption[];
+          const pending = typedConsumptions.filter((c: WorkerConsumption) => c.status === 'pending');
+          const paid = typedConsumptions.filter((c: WorkerConsumption) => c.status === 'paid');
 
-          const debtsByWorker = pending.reduce((acc: any, c: any) => {
-            const worker = workers.find(w => w.id === c.worker_id);
+          const debtsByWorker = pending.reduce((acc: any, c: WorkerConsumption) => {
+            const worker = typedWorkers.find(w => w.id === c.worker_id);
             const workerName = worker?.full_name || 'Desconocido';
             acc[workerName] = (acc[workerName] || 0) + c.total;
             return acc;
@@ -210,13 +215,13 @@ export default function ReportsPage() {
           setConsumptionData({
             totalDebt: pending.reduce((sum, c) => sum + c.total, 0),
             workersWithDebt: Object.keys(debtsByWorker).length,
-            totalConsumptions: consumptions.length,
+            totalConsumptions: typedConsumptions.length,
             pendingCount: pending.length,
             paidCount: paid.length,
             byWorker: byWorkerData,
-            recentConsumptions: consumptions.slice(0, 20).map((c: any) => ({
+            recentConsumptions: typedConsumptions.slice(0, 20).map((c: any) => ({
               ...c,
-              worker_name: workers.find(w => w.id === c.worker_id)?.full_name || 'Desconocido',
+              worker_name: typedWorkers.find(w => w.id === c.worker_id)?.full_name || 'Desconocido',
               product_name: c.product?.name || 'Producto desconocido'
             }))
           });
@@ -286,7 +291,7 @@ export default function ReportsPage() {
     try {
       // Construir URL con parámetros
       let url = `/api/reports?branchId=${selectedBranch.id}`;
-      
+
       if (exportMode === 'range') {
         url += `&startDate=${startDate}&endDate=${endDate}`;
       } else if (exportMode === 'single') {
@@ -304,7 +309,7 @@ export default function ReportsPage() {
       const urlBlob = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = urlBlob;
-      
+
       // Nombre del archivo según el tipo
       let filename;
       if (exportMode === 'range') {
@@ -314,7 +319,7 @@ export default function ReportsPage() {
       } else {
         filename = `Reporte_Completo_${selectedBranch.name}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
       }
-      
+
       link.download = filename;
       document.body.appendChild(link);
       link.click();
@@ -725,9 +730,9 @@ export default function ReportsPage() {
               </Select>
             </div>
 
-            <Button 
-              variant="outline" 
-              onClick={loadReportData} 
+            <Button
+              variant="outline"
+              onClick={loadReportData}
               disabled={isLoading}
               className="transition-all duration-200 hover:bg-gray-100 active:scale-95"
             >
@@ -780,7 +785,7 @@ export default function ReportsPage() {
                 <span className="text-xs">Todo</span>
                 <span className="text-[10px] opacity-70">el historial</span>
               </Button>
-              
+
               <Button
                 type="button"
                 variant={exportMode === 'range' ? 'default' : 'outline'}
@@ -793,7 +798,7 @@ export default function ReportsPage() {
                 <span className="text-xs">Rango</span>
                 <span className="text-[10px] opacity-70">de fechas</span>
               </Button>
-              
+
               <Button
                 type="button"
                 variant={exportMode === 'single' ? 'default' : 'outline'}
@@ -853,7 +858,7 @@ export default function ReportsPage() {
               {exportMode === 'all' && (
                 <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                   <p className="text-sm text-blue-800">
-                    <strong>Nota:</strong> Se exportará todo el historial disponible de ventas, consumos, órdenes e inventario actual. 
+                    <strong>Nota:</strong> Se exportará todo el historial disponible de ventas, consumos, órdenes e inventario actual.
                     Este archivo puede ser grande si tienes muchos registros.
                   </p>
                 </div>
@@ -862,8 +867,8 @@ export default function ReportsPage() {
           </div>
 
           <div className="flex justify-end gap-3">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setIsExportModalOpen(false)}
               className="transition-all duration-200 hover:bg-gray-100"
             >

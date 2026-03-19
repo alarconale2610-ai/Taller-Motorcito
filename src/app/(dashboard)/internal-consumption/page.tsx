@@ -772,7 +772,7 @@ export default function InternalConsumptionPage() {
                     </p>
                     <p className="text-sm text-green-600 mt-1">
                       Pagado el: {new Date(selectedConsumption.paid_at || '').toLocaleDateString()}
-                      {selectedConsumption.payment_method === 'transfer' && ' (Transferencia)'}
+                      {selectedConsumption.paid_at && ' (Pagado)'}
                     </p>
                   </div>
                 )}

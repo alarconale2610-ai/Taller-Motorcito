@@ -36,12 +36,12 @@ import {
 } from '@/components/ui/select';
 import { useBranchStore } from '@/store/useBranchStore';
 import { Worker } from '@/types/database';
-import { 
-  getWorkers, 
-  createWorker, 
-  updateWorker, 
-  deleteWorker, 
-  toggleWorkerStatus 
+import {
+  getWorkers,
+  createWorker,
+  updateWorker,
+  deleteWorker,
+  toggleWorkerStatus
 } from '@/lib/actions/workers';
 import { toast } from '@/hooks/use-toast';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -81,7 +81,7 @@ const roleColors: Record<string, string> = {
 };
 
 export default function WorkersPage() {
-  const { selectedBranch, branches } = useBranchStore();
+  const { selectedBranch } = useBranchStore(); // ← QUITADO: branches
   const { user } = useAuthStore();
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -194,7 +194,7 @@ export default function WorkersPage() {
       });
       return;
     }
-    
+
     setSubmitting(true);
     try {
       if (editingWorker) {
@@ -222,9 +222,9 @@ export default function WorkersPage() {
           create_user: formData.create_user,
         });
         setWorkers((prev) => [...prev, newWorker]);
-        
+
         if (formData.create_user) {
-          toast({ 
+          toast({
             title: 'Trabajador y usuario creados',
             description: `${formData.full_name} puede ingresar con ${formData.email} a ${selectedBranch.name}`
           });
@@ -245,10 +245,10 @@ export default function WorkersPage() {
   };
 
   const handleDelete = async (worker: Worker) => {
-    const msg = worker.user_id 
+    const msg = worker.user_id
       ? 'Este trabajador tiene acceso al sistema. ¿Eliminar trabajador y usuario?'
       : '¿Está seguro de eliminar este trabajador?';
-    
+
     if (!confirm(msg)) return;
 
     try {
@@ -408,7 +408,7 @@ export default function WorkersPage() {
                         <div className="flex items-center gap-1">
                           <Store className="h-3 w-3 text-gray-400" />
                           <span className="text-sm text-gray-600">
-                            {branches?.find(b => b.id === worker.branch_id)?.name || selectedBranch?.name || 'Sucursal'}
+                            {selectedBranch?.name || 'Sucursal'} // ← CORREGIDO: ya no busca en branches
                           </span>
                         </div>
                       </TableCell>
@@ -486,8 +486,8 @@ export default function WorkersPage() {
               {editingWorker ? 'Editar Trabajador' : 'Nuevo Trabajador'}
             </DialogTitle>
             <DialogDescription>
-              {editingWorker 
-                ? 'Modifique los datos del trabajador' 
+              {editingWorker
+                ? 'Modifique los datos del trabajador'
                 : `Creando trabajador para: ${selectedBranch.name}`}
             </DialogDescription>
           </DialogHeader>
@@ -549,9 +549,9 @@ export default function WorkersPage() {
                 <Label className="flex items-center gap-2">
                   <Mail className="h-4 w-4" /> Email de acceso
                 </Label>
-                <Input 
-                  value={editingWorker.email} 
-                  disabled 
+                <Input
+                  value={editingWorker.email}
+                  disabled
                   className="bg-gray-50"
                 />
                 <p className="text-xs text-gray-500">
@@ -592,12 +592,12 @@ export default function WorkersPage() {
                   <div className="space-y-3 pt-2 border-t border-gray-200">
                     <div className="space-y-2">
                       <Label className="flex items-center gap-2 text-sm font-medium">
-                        <Mail className="h-4 w-4 text-gray-500" /> 
+                        <Mail className="h-4 w-4 text-gray-500" />
                         Email de acceso *
                       </Label>
-                      <Input 
+                      <Input
                         type="email"
-                        {...register('email')} 
+                        {...register('email')}
                         placeholder="trabajador@empresa.com"
                         className="bg-white"
                       />
@@ -605,16 +605,16 @@ export default function WorkersPage() {
                         <p className="text-sm text-red-500">{errors.email.message}</p>
                       )}
                     </div>
-                    
+
                     <div className="space-y-2">
                       <Label className="flex items-center gap-2 text-sm font-medium">
-                        <Lock className="h-4 w-4 text-gray-500" /> 
+                        <Lock className="h-4 w-4 text-gray-500" />
                         Contraseña *
                       </Label>
                       <div className="relative">
-                        <Input 
+                        <Input
                           type={showPassword ? "text" : "password"}
-                          {...register('password')} 
+                          {...register('password')}
                           placeholder="Mínimo 6 caracteres"
                           className="bg-white pr-20"
                         />
@@ -632,9 +632,9 @@ export default function WorkersPage() {
                     </div>
 
                     <div className="p-3 bg-blue-50 rounded text-sm text-blue-700">
-                      <strong>Nota:</strong> El rol de sistema será: <br/>
-                      • Mecánico/Electricista/Ayudante → <strong>Mecánico</strong> (acceso a órdenes)<br/>
-                      • Otro → <strong>Cajero</strong> (acceso a POS)<br/>
+                      <strong>Nota:</strong> El rol de sistema será: <br />
+                      • Mecánico/Electricista/Ayudante → <strong>Mecánico</strong> (acceso a órdenes)<br />
+                      • Otro → <strong>Cajero</strong> (acceso a POS)<br />
                       • Sucursal: <strong>{selectedBranch.name}</strong>
                     </div>
                   </div>
