@@ -8,7 +8,12 @@ export async function getBranches(): Promise<Branch[]> {
 
   const { data, error } = await supabase
     .from('branches')
-    .select('*')
+    .select(`
+      *,
+      branch_config (
+        business_name
+      )
+    `)
     .eq('is_active', true)
     .order('name');
 

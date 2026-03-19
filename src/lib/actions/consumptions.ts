@@ -4,6 +4,63 @@ import { createClient } from '@/lib/supabase-server';
 import { WorkerConsumption } from '@/types/database';
 import { revalidatePath } from 'next/cache';
 
+// Nueva función: Obtener solo el conteo de consumos de HOY (más rápido)
+export async function getTodayConsumptionsCount(branchId: string): Promise<number> {
+  const supabase = await createClient();
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  // Primero obtener IDs de trabajadores de la sucursal
+  const { data: workers, error: workersError } = await supabase
+    .from('workers')
+    .select('id')
+    .eq('branch_id', branchId)
+    .eq('is_active', true);
+
+  if (workersError || !workers || workers.length === 0) {
+    return 0;
+  }
+
+  const workerIds = workers.map(w => w.id);
+
+  // Contar consumos de hoy (más eficiente que traer todos los datos)
+  const { count, error } = await supabase
+    .from('worker_consumptions')
+    .select('*', { count: 'exact', head: true })
+    .in('worker_id', workerIds)
+    .gte('consumed_at', today.toISOString())
+    .lt('consumed_at', tomorrow.toISOString());
+
+  if (error) {
+    console.error('Error counting today consumptions:', error);
+    return 0;
+  }
+
+  return count || 0;
+}
+
+// Modificar getWorkerDebtSummary para limitar resultados
+export async function getWorkerDebtSummary(branchId: string, limit: number = 10) {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from('worker_debt_summary')
+    .select('*')
+    .eq('branch_id', branchId)
+    .gt('total_debt', 0)
+    .order('total_debt', { ascending: false })
+    .limit(limit);  // Limitar para no traer deudas de todos los trabajadores si son muchos
+
+  if (error) {
+    throw new Error('Error al cargar resumen de deudas: ' + error.message);
+  }
+
+  return data || [];
+}
+
 export async function getConsumptions(branchId: string): Promise<WorkerConsumption[]> {
   if (!branchId) throw new Error('Branch ID requerido');
 
@@ -104,22 +161,7 @@ export async function getPendingConsumptions(branchId: string): Promise<WorkerCo
   return data || [];
 }
 
-export async function getWorkerDebtSummary(branchId: string) {
-  const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from('worker_debt_summary')
-    .select('*')
-    .eq('branch_id', branchId)
-    .gt('total_debt', 0)
-    .order('total_debt', { ascending: false });
-
-  if (error) {
-    throw new Error('Error al cargar resumen de deudas: ' + error.message);
-  }
-
-  return data || [];
-}
 
 export async function createConsumption(
   data: Omit<WorkerConsumption, 'id' | 'consumed_at' | 'paid_at' | 'user_id'>,

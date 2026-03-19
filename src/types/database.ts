@@ -5,6 +5,9 @@ export interface Branch {
   name: string;
   address: string | null;
   phone: string | null;
+   branch_config?: {
+    business_name: string;
+  } | null;
 }
 
 export interface Profile {
@@ -146,7 +149,9 @@ export interface BranchConfig {
   iva_percent: number;
   receipt_header?: string;
   receipt_footer?: string;
+ 
 }
+
 
 export interface DocumentSequence {
   id: string;

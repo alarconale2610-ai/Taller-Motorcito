@@ -94,15 +94,22 @@ export function Header() {
             {/* ELIMINADO: SelectItem con value="" que causaba el error */}
             
             {branches.map((branch) => (
-              <SelectItem key={branch.id} value={branch.id}>
-                <div className="flex items-center justify-between w-full">
-                  <span>{branch.name}</span>
-                  {selectedBranch?.id === branch.id && (
-                    <Check className="h-4 w-4 ml-2 text-blue-600" />
-                  )}
-                </div>
-              </SelectItem>
-            ))}
+  <SelectItem key={branch.id} value={branch.id}>
+    <div className="flex items-center justify-between w-full min-w-[200px]">
+      <div className="flex flex-col items-start">
+        <span className="font-medium">
+          {branch.branch_config?.business_name || branch.name}
+        </span>
+        {branch.branch_config?.business_name && (
+          <span className="text-xs text-gray-500">{branch.name}</span>
+        )}
+      </div>
+      {selectedBranch?.id === branch.id && (
+        <Check className="h-4 w-4 ml-2 text-blue-600 shrink-0" />
+      )}
+    </div>
+  </SelectItem>
+))}
           </SelectContent>
         </Select>
         
@@ -138,7 +145,9 @@ export function Header() {
           </DropdownMenuItem>
           <DropdownMenuItem>
             <Building2 className="mr-2 h-4 w-4" />
-            <span>Sucursal: {selectedBranch?.name || 'No seleccionada'}</span>
+            <span>
+  Sucursal: {selectedBranch?.branch_config?.business_name || selectedBranch?.name || 'No seleccionada'}
+</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
