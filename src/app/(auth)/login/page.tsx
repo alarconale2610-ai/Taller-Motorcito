@@ -183,7 +183,7 @@ export default function LoginPage() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="admin@tallerweb.com"
+                  placeholder="user@tallerweb.com"
                   className="h-12 bg-white/50 border-gray-200 rounded-xl focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all"
                   {...register('email')}
                 />
