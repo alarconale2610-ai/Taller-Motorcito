@@ -17,7 +17,7 @@ interface InventoryTableProps {
 }
 
 const ROW_HEIGHT = 60; // Altura fija de cada fila en px
-const OVERSCAN = 10;   // Filas extra para scroll suave
+const OVERSCAN = 10; // Filas extra para scroll suave
 
 export function InventoryTable({ products, onEdit, onDelete, searchQuery }: InventoryTableProps) {
   const parentRef = useRef<HTMLDivElement>(null);
@@ -46,8 +46,8 @@ export function InventoryTable({ products, onEdit, onDelete, searchQuery }: Inve
 
   // Calcular espacios para el padding top/bottom
   const paddingTop = virtualRows.length > 0 ? virtualRows[0].start : 0;
-  const paddingBottom = virtualRows.length > 0 
-    ? totalSize - virtualRows[virtualRows.length - 1].end 
+  const paddingBottom = virtualRows.length > 0
+    ? totalSize - virtualRows[virtualRows.length - 1].end
     : 0;
 
   if (filteredProducts.length === 0) {
@@ -72,8 +72,8 @@ export function InventoryTable({ products, onEdit, onDelete, searchQuery }: Inve
       </div>
 
       {/* Cuerpo virtualizado */}
-      <div 
-        ref={parentRef} 
+      <div
+        ref={parentRef}
         className="overflow-auto max-h-[calc(100vh-300px)]"
         style={{ height: Math.min(filteredProducts.length * ROW_HEIGHT, 600) }}
       >

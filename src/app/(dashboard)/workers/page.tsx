@@ -408,7 +408,7 @@ export default function WorkersPage() {
                         <div className="flex items-center gap-1">
                           <Store className="h-3 w-3 text-gray-400" />
                           <span className="text-sm text-gray-600">
-                            {selectedBranch?.name || 'Sucursal'} // ← CORREGIDO: ya no busca en branches
+                            {selectedBranch?.name || 'Sucursal'}
                           </span>
                         </div>
                       </TableCell>
