@@ -9,8 +9,6 @@ export async function login(email: string, password: string): Promise<{ profile:
   
   const supabase = await createClient();
   
-  // Paso 1: Autenticar
-  console.log('Intentando autenticar...');
   const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
     email,
     password,
@@ -28,8 +26,6 @@ export async function login(email: string, password: string): Promise<{ profile:
 
   console.log('Autenticacion exitosa. User ID:', authData.user.id);
 
-  // Paso 2: Buscar perfil
-  console.log('Buscando perfil en tabla profiles...');
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('*')
@@ -50,7 +46,6 @@ export async function login(email: string, password: string): Promise<{ profile:
     throw new Error('Usuario inactivo. Contacte al administrador.');
   }
 
-  // Paso 3: Obtener sucursal automáticamente del perfil
   if (!profile.branch_id) {
     console.log('Usuario sin sucursal asignada');
     await supabase.auth.signOut();
@@ -76,6 +71,7 @@ export async function login(email: string, password: string): Promise<{ profile:
 export async function logout() {
   const supabase = await createClient();
   await supabase.auth.signOut();
+  // Limpiar localStorage del lado del cliente se hará en el componente
 }
 
 export async function getCurrentUser(): Promise<Profile | null> {

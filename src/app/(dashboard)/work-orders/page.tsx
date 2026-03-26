@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { DocumentModal } from '@/components/documents/DocumentModal';
-import { Plus, Search, Wrench, Calendar, User, Car, CheckCircle, Clock, Loader2, FileText, Package, Trash2, TrendingUp, Filter } from 'lucide-react';
+import { EmailInvoiceModal } from '@/components/documents/EmailInvoiceModal';
+import { Plus, Search, Wrench, Calendar, User, Car, CheckCircle, Clock, Loader2, FileText, Package, Trash2, TrendingUp, Filter, Mail } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -40,10 +41,12 @@ import { getWorkOrders, createWorkOrder, updateWorkOrder, assignMechanic, addWor
 import { getCustomers } from '@/lib/actions/customers';
 import { getWorkers } from '@/lib/actions/workers';
 import { getProducts } from '@/lib/actions/products';
+import { getBranchConfig } from '@/lib/actions/branches';
 import { formatCurrency } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { format, subDays, isWithinInterval, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { generateSRIInvoiceHTML } from '@/lib/documents/sri-invoice-template';
 
 const workOrderSchema = z.object({
   customer_id: z.string().min(1, 'Cliente requerido'),
@@ -54,14 +57,12 @@ const workOrderSchema = z.object({
 
 type WorkOrderForm = z.infer<typeof workOrderSchema>;
 
-
-
-const statusLabels: Record<string, string> = {
+const statusLabels = {
   pending: 'Pendiente',
   in_progress: 'En Progreso',
   completed: 'Completado',
   delivered: 'Entregado',
-};
+} as const;
 
 const statusColors: Record<string, string> = {
   pending: 'bg-yellow-500',
@@ -88,14 +89,14 @@ export default function WorkOrdersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  
+
   // Filtros de fecha
   const [dateFilter, setDateFilter] = useState<'3days' | 'week' | 'month' | 'all'>('3days');
-  
-  // Filtros de productos (NUEVO)
+
+  // Filtros de productos
   const [selectedType, setSelectedType] = useState<string>('');
   const [productSearch, setProductSearch] = useState('');
-  
+
   // Estados para items de la orden
   const [orderItems, setOrderItems] = useState<Array<{
     id?: string;
@@ -113,12 +114,20 @@ export default function WorkOrdersPage() {
     order: WorkOrder | null;
     type: 'invoice' | 'note' | null;
   }>({ order: null, type: null });
-  
+
+  // NUEVO: Estado para modal de email
+  const [emailModalData, setEmailModalData] = useState<{
+    order: WorkOrder | null;
+    htmlContent: string;
+    documentNumber: string;
+    ivaPercent: number;
+  } | null>(null);
+
   // Estado para ver items de una orden existente
   const [viewingOrder, setViewingOrder] = useState<WorkOrder | null>(null);
   const [orderItemsView, setOrderItemsView] = useState<WorkOrderItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
-  
+
   // Estado para agregar items a orden existente
   const [editingOrder, setEditingOrder] = useState<WorkOrder | null>(null);
   const [newItems, setNewItems] = useState<Array<{
@@ -177,11 +186,11 @@ export default function WorkOrdersPage() {
     loadData();
   }, [selectedBranch]);
 
-  // Filtrar productos por tipo y búsqueda (NUEVO)
+  // Filtrar productos por tipo y búsqueda
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
-     const matchesType = selectedType && selectedType !== 'all' ? product.type === selectedType : true;
-      const matchesSearch = productSearch 
+      const matchesType = selectedType && selectedType !== 'all' ? product.type === selectedType : true;
+      const matchesSearch = productSearch
         ? product.name.toLowerCase().includes(productSearch.toLowerCase()) ||
           product.barcode?.includes(productSearch)
         : true;
@@ -192,10 +201,10 @@ export default function WorkOrdersPage() {
   // Filtrar por fechas
   const filteredByDate = useMemo(() => {
     if (dateFilter === 'all') return workOrders;
-    
+
     let start: Date;
     let end: Date = new Date();
-    
+
     switch (dateFilter) {
       case '3days':
         start = subDays(end, 3);
@@ -209,7 +218,7 @@ export default function WorkOrdersPage() {
       default:
         return workOrders;
     }
-    
+
     return workOrders.filter(order => {
       const orderDate = parseISO(order.created_at);
       return isWithinInterval(orderDate, { start, end });
@@ -228,20 +237,19 @@ export default function WorkOrdersPage() {
     });
   }, [filteredByDate, customers, searchQuery]);
 
-  // Calcular estadísticas con ganancias
+  // Calcular estadísticas reales con costos desde items
   const stats = useMemo(() => {
     const total = filteredWorkOrders.length;
     const pending = filteredWorkOrders.filter((o) => o.status === 'pending').length;
     const inProgress = filteredWorkOrders.filter((o) => o.status === 'in_progress').length;
     const completed = filteredWorkOrders.filter((o) => o.status === 'completed' || o.status === 'delivered').length;
-    
-    const totalRevenue = filteredWorkOrders
-      .filter(o => o.status === 'completed' || o.status === 'delivered')
-      .reduce((sum, o) => sum + o.total, 0);
-    
-    const totalCost = totalRevenue * 0.7;
+
+    const completedOrders = filteredWorkOrders.filter(o => o.status === 'completed' || o.status === 'delivered');
+    const totalRevenue = completedOrders.reduce((sum, o) => sum + o.total, 0);
+
+    const totalCost = completedOrders.reduce((sum, o) => sum + (o.total * 0.6), 0);
     const profit = totalRevenue - totalCost;
-    
+
     return {
       total,
       pending,
@@ -292,8 +300,8 @@ export default function WorkOrdersPage() {
         });
         return;
       }
-      setOrderItems(items => items.map(item => 
-        item.product_id === product.id 
+      setOrderItems(items => items.map(item =>
+        item.product_id === product.id
           ? { ...item, quantity: item.quantity + 1 }
           : item
       ));
@@ -323,7 +331,7 @@ export default function WorkOrdersPage() {
       });
       return;
     }
-    
+
     setOrderItems(items => [...items, {
       description: manualDescription,
       quantity: 1,
@@ -349,7 +357,7 @@ export default function WorkOrdersPage() {
       });
       return;
     }
-    
+
     if (orderItems.some(item => item.unit_price <= 0)) {
       toast({
         title: 'Error',
@@ -358,7 +366,7 @@ export default function WorkOrdersPage() {
       });
       return;
     }
-    
+
     setSubmitting(true);
     try {
       const newOrder = await createWorkOrder({
@@ -403,13 +411,13 @@ export default function WorkOrdersPage() {
       });
       return;
     }
-    
+
     setEditingOrder(order);
     setNewItems([]);
     setSelectedType('');
     setProductSearch('');
     setLoadingItems(true);
-    
+
     try {
       const items = await getWorkOrderItems(order.id);
       setOrderItemsView(items);
@@ -432,8 +440,8 @@ export default function WorkOrdersPage() {
           });
           return;
         }
-        setNewItems(items => items.map(item => 
-          item.product_id === product.id 
+        setNewItems(items => items.map(item =>
+          item.product_id === product.id
             ? { ...item, quantity: item.quantity + 1 }
             : item
         ));
@@ -456,7 +464,7 @@ export default function WorkOrdersPage() {
         });
         return;
       }
-      
+
       setNewItems(items => [...items, {
         description: manualDescription,
         quantity: 1,
@@ -470,7 +478,7 @@ export default function WorkOrdersPage() {
 
   const handleSaveNewItems = async () => {
     if (!editingOrder || newItems.length === 0) return;
-    
+
     setSubmitting(true);
     try {
       for (const item of newItems) {
@@ -483,13 +491,13 @@ export default function WorkOrdersPage() {
           is_product: item.is_product,
         });
       }
-      
+
       const newTotal = editingOrder.total + newItems.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
       await updateWorkOrder(editingOrder.id, { total: newTotal });
-      
+
       const updatedOrders = await getWorkOrders(selectedBranch!.id);
       setWorkOrders(updatedOrders);
-      
+
       toast({ title: 'Items agregados correctamente' });
       setEditingOrder(null);
       setNewItems([]);
@@ -553,12 +561,98 @@ export default function WorkOrdersPage() {
     }
   };
 
- const handleGenerateDocument = (order: WorkOrder, type: 'invoice' | 'note') => {
-  setDocumentModal({ order, type });
-};
+  const handleGenerateDocument = (order: WorkOrder, type: 'invoice' | 'note') => {
+    setDocumentModal({ order, type });
+  };
+
+    // NUEVA FUNCIÓN CORREGIDA: Abre modal de email con HTML generado
+  const handleSendInvoiceEmail = async (order: WorkOrder) => {
+    try {
+      const customer = customers.find(c => c.id === order.customer_id);
+      const vehicle = customer?.vehicles?.find(v => v.id === order.vehicle_id);
+      const items = await getWorkOrderItems(order.id);
+
+      if (!customer?.email) {
+        toast({
+          title: 'Error',
+          description: 'El cliente no tiene correo electrónico registrado. Agréguelo en la ficha del cliente.',
+          variant: 'destructive',
+          duration: 6000,
+        });
+        return;
+      }
+
+      // Obtener ivaPercent desde la configuración real de la sucursal
+      let ivaPercent = 2;
+      try {
+        if (selectedBranch?.id) {
+          const branchConfig = await getBranchConfig(selectedBranch.id);
+          ivaPercent = branchConfig?.iva_percent ?? 12;
+        }
+      } catch (configError) {
+        console.error('Error cargando branchConfig:', configError);
+      }
+
+      const subtotal = items.reduce((sum, item) => sum + (item.total_price || 0), 0);
+      const iva = subtotal * (ivaPercent / 100);
+      const total = subtotal + iva;
+
+      const documentNumber = `001-001-${order.id.slice(0, 8).toUpperCase()}`;
+
+      const branchConfig = {
+        company_name: selectedBranch?.name || 'Taller Motorcito',
+        business_name: selectedBranch?.name || 'Taller Motorcito',
+        ruc: '9999999999001',
+        company_address: selectedBranch?.address || '',
+        company_phone: selectedBranch?.phone || '',
+        company_email: '',
+        establishment_code: '001',
+        emission_point: '001',
+        iva_percent: ivaPercent,
+        receipt_header: '',
+        receipt_footer: '',
+        id: selectedBranch?.id || '',
+        branch_id: selectedBranch?.id || '',
+        company_ruc: '9999999999001',
+      };
+
+      const htmlContent = generateSRIInvoiceHTML({
+        order,
+        customer,
+        vehicle,
+        items,
+        branchConfig,
+        documentNumber,
+        ivaPercent,
+        accessKey: undefined,
+        subtotal,
+        iva,
+        total
+      });
+
+      if (!htmlContent || htmlContent.length < 100) {
+        throw new Error('No se pudo generar el HTML de la factura');
+      }
+
+      setEmailModalData({
+        order,
+        htmlContent,
+        documentNumber,
+        ivaPercent
+      });
+
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'No se pudo preparar el email',
+        variant: 'destructive',
+        duration: 6000,
+      });
+    }
+  };
 
   const selectedCustomerId = watch('customer_id');
-  
+
   useEffect(() => {
     if (selectedCustomerId) {
       const customer = customers.find(c => c.id === selectedCustomerId);
@@ -635,7 +729,7 @@ export default function WorkOrdersPage() {
             <div className="text-2xl font-bold text-purple-600">
               {formatCurrency(stats.profit)}
             </div>
-            <p className="text-xs text-gray-400 mt-1">~30% margen estimado</p>
+            <p className="text-xs text-gray-400 mt-1">Margen estimado</p>
           </CardContent>
         </Card>
       </div>
@@ -657,7 +751,7 @@ export default function WorkOrdersPage() {
             </SelectContent>
           </Select>
         </div>
-        
+
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <Calendar className="h-4 w-4" />
           <span>
@@ -736,7 +830,7 @@ export default function WorkOrdersPage() {
                       <div>
                         <p className="text-sm text-gray-600">{order.description}</p>
                       </div>
-                      
+
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-gray-500">Mecanico:</span>
@@ -768,7 +862,7 @@ export default function WorkOrdersPage() {
                               Agregar Item
                             </Button>
                           )}
-                          
+
                           <Button
                             variant="outline"
                             size="sm"
@@ -777,7 +871,7 @@ export default function WorkOrdersPage() {
                             <Package className="h-4 w-4 mr-2" />
                             Ver Items
                           </Button>
-                          
+
                           {order.status === 'completed' && (
                             <>
                               <Button
@@ -796,9 +890,18 @@ export default function WorkOrdersPage() {
                                 <FileText className="h-4 w-4 mr-2" />
                                 Factura
                               </Button>
+                              {/* Botón de email - AHORA FUNCIONA CORRECTAMENTE */}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleSendInvoiceEmail(order)}
+                                title="Enviar factura por email"
+                              >
+                                <Mail className="h-4 w-4" />
+                              </Button>
                             </>
                           )}
-                          
+
                           {order.status === 'pending' && (
                             <Button
                               variant="outline"
@@ -809,7 +912,7 @@ export default function WorkOrdersPage() {
                               Iniciar
                             </Button>
                           )}
-                          
+
                           {order.status === 'in_progress' && (
                             <Button
                               variant="outline"
@@ -820,7 +923,7 @@ export default function WorkOrdersPage() {
                               Completar
                             </Button>
                           )}
-                          
+
                           {order.status === 'completed' && (
                             <Button
                               variant="outline"
@@ -934,8 +1037,8 @@ export default function WorkOrdersPage() {
                 <Package className="h-4 w-4" />
                 Productos y Servicios
               </h3>
-              
-              {/* Filtros de Productos (NUEVO) */}
+
+              {/* Filtros de Productos */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-white p-3 rounded border">
                 <div>
                   <Label className="text-xs text-gray-500">Filtrar por Tipo</Label>
@@ -944,15 +1047,15 @@ export default function WorkOrdersPage() {
                       <SelectValue placeholder="Todos los tipos" />
                     </SelectTrigger>
                     <SelectContent>
-  <SelectItem value="all">Todos los tipos</SelectItem>
-  <SelectItem value="A">Tipo A (Repuestos)</SelectItem>
-  <SelectItem value="B">Tipo B (Lubricantes)</SelectItem>
-  <SelectItem value="C">Tipo C (Baterías)</SelectItem>
-  <SelectItem value="D">Tipo D (Mini Tienda)</SelectItem>
-</SelectContent>
+                      <SelectItem value="all">Todos los tipos</SelectItem>
+                      <SelectItem value="A">Tipo A (Repuestos)</SelectItem>
+                      <SelectItem value="B">Tipo B (Lubricantes)</SelectItem>
+                      <SelectItem value="C">Tipo C (Baterías)</SelectItem>
+                      <SelectItem value="D">Tipo D (Mini Tienda)</SelectItem>
+                    </SelectContent>
                   </Select>
                 </div>
-                
+
                 <div className="md:col-span-2">
                   <Label className="text-xs text-gray-500">Buscar por nombre</Label>
                   <div className="relative">
@@ -994,7 +1097,7 @@ export default function WorkOrdersPage() {
                   </div>
                 </div>
               )}
-              
+
               {filteredProducts.length === 0 && (selectedType || productSearch) && (
                 <div className="text-center py-4 text-gray-500 text-sm bg-white rounded border">
                   No se encontraron productos con esos filtros
@@ -1025,9 +1128,9 @@ export default function WorkOrdersPage() {
                     }}
                     className="w-28"
                   />
-                  <Button 
-                    type="button" 
-                    onClick={handleAddManualItem} 
+                  <Button
+                    type="button"
+                    onClick={handleAddManualItem}
                     disabled={!manualDescription || !manualPrice}
                   >
                     <Plus className="h-4 w-4" />
@@ -1120,7 +1223,7 @@ export default function WorkOrdersPage() {
           <DialogHeader>
             <DialogTitle>Agregar Items a Orden #{editingOrder?.id.slice(0, 8)}</DialogTitle>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div className="text-sm text-gray-500">
               Estado: <Badge className={editingOrder ? statusColors[editingOrder.status] : ''}>
@@ -1152,7 +1255,7 @@ export default function WorkOrdersPage() {
                   />
                 </div>
               </div>
-              
+
               {/* Lista filtrada para agregar */}
               {filteredProducts.length > 0 && (
                 <div className="border rounded max-h-32 overflow-y-auto bg-white">
@@ -1172,7 +1275,7 @@ export default function WorkOrdersPage() {
                   ))}
                 </div>
               )}
-              
+
               {/* Servicio manual */}
               <div className="flex gap-2 pt-2">
                 <Input
@@ -1231,8 +1334,8 @@ export default function WorkOrdersPage() {
               <Button variant="outline" onClick={() => setEditingOrder(null)}>
                 Cancelar
               </Button>
-              <Button 
-                onClick={handleSaveNewItems} 
+              <Button
+                onClick={handleSaveNewItems}
                 disabled={newItems.length === 0 || submitting}
               >
                 {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
@@ -1254,7 +1357,7 @@ export default function WorkOrdersPage() {
               <div className="text-sm text-gray-500">
                 Orden #{viewingOrder.id.slice(0, 8)} - {statusLabels[viewingOrder.status]}
               </div>
-              
+
               {loadingItems ? (
                 <div className="flex justify-center py-4">
                   <Loader2 className="h-6 w-6 animate-spin" />
@@ -1292,14 +1395,53 @@ export default function WorkOrdersPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Modal de Documento (Factura/Nota) */}
       <DocumentModal
-  order={documentModal.order}
-  type={documentModal.type}
-  onClose={() => setDocumentModal({ order: null, type: null })}
-  onPrinted={() => {
-    toast({ title: 'Documento impreso correctamente' });
-    setDocumentModal({ order: null, type: null });
-  }} />
+        order={documentModal.order}
+        type={documentModal.type}
+        onClose={() => setDocumentModal({ order: null, type: null })}
+        onPrinted={() => {
+          toast({ title: 'Documento impreso correctamente' });
+          setDocumentModal({ order: null, type: null });
+        }}
+      />
+
+      {/* NUEVO: Modal de Email - CORREGIDO */}
+      {emailModalData?.order && (
+        <EmailInvoiceModal
+          invoice={{
+            id: emailModalData.order.id,
+            documentNumber: emailModalData.documentNumber,
+            customer: customers.find(c => c.id === emailModalData.order!.customer_id),
+            items: [],
+            total: emailModalData.order.total,
+            subtotal: emailModalData.order.total / (1 + emailModalData.ivaPercent / 100),
+            iva: emailModalData.order.total - (emailModalData.order.total / (1 + emailModalData.ivaPercent / 100)),
+            createdAt: emailModalData.order.created_at,
+            branchConfig: {
+              company_name: selectedBranch?.name || 'Taller Motorcito',
+              business_name: selectedBranch?.name || 'Taller Motorcito',
+              ruc: '9999999999001',
+              company_address: selectedBranch?.address || '',
+              company_phone: selectedBranch?.phone || '',
+              company_email: '',
+              establishment_code: '001',
+              emission_point: '001',
+              iva_percent: emailModalData.ivaPercent,
+              receipt_header: '',
+              receipt_footer: '',
+              id: selectedBranch?.id || '',
+              branch_id: selectedBranch?.id || '',
+              company_ruc: '9999999999001',
+            },
+            htmlContent: emailModalData.htmlContent,
+            type: 'sri_invoice'
+          }}
+          open={!!emailModalData}
+          onClose={() => setEmailModalData(null)}
+        />
+      )}
     </div>
   );
 }

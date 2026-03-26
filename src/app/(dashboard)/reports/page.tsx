@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase';
 import { Sale, Product, Worker, WorkerConsumption } from '@/types/database';
 
 type ReportType = 'sales' | 'inventory' | 'orders' | 'internal_consumption';
@@ -46,6 +46,9 @@ export default function ReportsPage() {
   const [salesData, setSalesData] = useState<any>(null);
   const [inventoryData, setInventoryData] = useState<any>(null);
   const [consumptionData, setConsumptionData] = useState<any>(null);
+
+  // Crear instancia de supabase
+  const supabase = createClient();
 
   useEffect(() => {
     if (selectedBranch?.id) {
@@ -134,8 +137,7 @@ export default function ReportsPage() {
         } else {
           setSalesData({ total: 0, count: 0, averageTicket: 0, chartData: [], paymentMethods: {}, sales: [] });
         }
-      }
-      else if (reportType === 'inventory') {
+      } else if (reportType === 'inventory') {
         const { data: products, error } = await supabase
           .from('products')
           .select('*')
@@ -159,8 +161,7 @@ export default function ReportsPage() {
             topStock: [...typedProducts].sort((a: Product, b: Product) => b.stock - a.stock).slice(0, 10)
           });
         }
-      }
-      else if (reportType === 'internal_consumption') {
+      } else if (reportType === 'internal_consumption') {
         console.log('Cargando consumos internos...');
 
         const { data: workers, error: workersError } = await supabase

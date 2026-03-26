@@ -6,8 +6,14 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useBranchStore } from '@/store/useBranchStore';
-import { getBranches } from '@/lib/actions/branches';
+import { getBranches, getBranchConfig } from '@/lib/actions/branches';
 import { toast } from '@/hooks/use-toast';
+import { Branch } from '@/types/database';
+
+interface BranchWithConfig extends Branch {
+  business_name?: string;
+  config?: any;
+}
 
 export default function DashboardLayout({
   children,
@@ -16,28 +22,34 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const { user } = useAuthStore();
-  const { selectedBranch, setSelectedBranch } = useBranchStore();
+  const { selectedBranch, setSelectedBranch, branches, setBranches } = useBranchStore();
   const [loading, setLoading] = useState(true);
 
-  // Redirect to login if not authenticated
   useEffect(() => {
     if (!user) {
       router.push('/login');
     }
   }, [user, router]);
 
-  // Set default branch if not selected
   useEffect(() => {
-    async function loadDefaultBranch() {
-      if (!user || selectedBranch) {
+    async function loadBranchesWithConfig() {
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      // ✅ CORREGIDO: Recargar si no tiene business_name (datos viejos del persist)
+      const hasStaleData = selectedBranch && !selectedBranch.business_name;
+      
+      if (branches.length > 0 && selectedBranch && !hasStaleData) {
         setLoading(false);
         return;
       }
 
       try {
-        const branches = await getBranches();
+        const branchesList = await getBranches();
         
-        if (branches.length === 0) {
+        if (branchesList.length === 0) {
           toast({
             title: 'Error',
             description: 'No hay sucursales disponibles',
@@ -47,20 +59,40 @@ export default function DashboardLayout({
           return;
         }
 
+        const branchesWithConfig: BranchWithConfig[] = await Promise.all(
+          branchesList.map(async (branch) => {
+            try {
+              const config = await getBranchConfig(branch.id);
+              return {
+                ...branch,
+                config: config || undefined,
+                business_name: config?.business_name || branch.name,
+              };
+            } catch {
+              return {
+                ...branch,
+                business_name: branch.name,
+              };
+            }
+          })
+        );
+
+        setBranches(branchesWithConfig);
+
+        let branchToSelect: BranchWithConfig | null = null;
+
         if (user.branch_id) {
-          // Usuario no-admin: usar su branch asignada
-          const branch = branches.find((b) => b.id === user.branch_id);
-          if (branch) {
-            setSelectedBranch(branch);
-          } else {
-            // Si no encuentra la branch asignada, usar la primera
-            setSelectedBranch(branches[0]);
-          }
-        } else {
-          // Admin: seleccionar primera sucursal por defecto
-          setSelectedBranch(branches[0]);
+          branchToSelect = branchesWithConfig.find((b) => b.id === user.branch_id) || null;
         }
+        
+        if (!branchToSelect) {
+          branchToSelect = branchesWithConfig[0];
+        }
+
+        setSelectedBranch(branchToSelect);
+
       } catch (error) {
+        console.error('Error loading branches:', error);
         toast({
           title: 'Error',
           description: 'No se pudieron cargar las sucursales',
@@ -71,8 +103,8 @@ export default function DashboardLayout({
       }
     }
 
-    loadDefaultBranch();
-  }, [user, selectedBranch, setSelectedBranch]);
+    loadBranchesWithConfig();
+  }, [user, branches.length, selectedBranch, setBranches, setSelectedBranch]);
 
   if (!user || loading) {
     return (

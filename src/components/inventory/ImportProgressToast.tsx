@@ -12,7 +12,8 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { useState } from 'react';
-import { ImportProgress } from '@/hooks/useBackgroundImport';
+import { ImportProgress } from '@/hooks/useSmartImport';
+
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';

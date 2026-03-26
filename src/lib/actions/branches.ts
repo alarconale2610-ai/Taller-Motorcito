@@ -1,4 +1,5 @@
-﻿'use server';
+﻿// src/lib/actions/branches.ts
+'use server';
 
 import { createClient } from '@/lib/supabase-server';
 import { Branch, BranchConfig } from '@/types/database';
@@ -45,7 +46,6 @@ export async function updateBranchConfig(
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = await createClient();
 
-  // Verificación de seguridad: solo admins pueden editar
   if (userRole !== 'admin') {
     return { success: false, error: 'No tiene permisos para editar la configuración' };
   }

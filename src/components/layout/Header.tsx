@@ -1,18 +1,9 @@
 ﻿'use client';
 
-import { useState, useEffect } from 'react';
-import { Building2, User, Check } from 'lucide-react';
 import { useBranchStore } from '@/store/useBranchStore';
 import { useAuthStore } from '@/store/useAuthStore';
-import { getBranches } from '@/lib/actions/branches';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { useThemeStore } from '@/store/useThemeStore';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,136 +12,128 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Branch } from '@/types/database';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Building2, ChevronDown, LogOut, User } from 'lucide-react';
+import { logout } from '@/lib/actions/auth';
+import { useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
 
 export function Header() {
-  const { selectedBranch, setSelectedBranch } = useBranchStore();
-  const { user } = useAuthStore();
-  const [branches, setBranches] = useState<Branch[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const { user, setUser } = useAuthStore();
+  const { selectedBranch, branches, setSelectedBranch, clearBranchData } = useBranchStore();
+  const { theme } = useThemeStore();
 
-  const isAdmin = user?.role === 'admin';
-
-  useEffect(() => {
-    async function loadBranches() {
-      try {
-        const data = await getBranches();
-        setBranches(data);
-        
-        // Si no hay sucursal seleccionada y el usuario tiene una asignada, seleccionarla
-        if (!selectedBranch && user?.branch_id) {
-          const userBranch = data.find(b => b.id === user.branch_id);
-          if (userBranch) {
-            setSelectedBranch(userBranch);
-          }
-        }
-      } catch (error) {
-        console.error('Error cargando sucursales:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadBranches();
-  }, [user, selectedBranch, setSelectedBranch]);
-
-  const handleBranchChange = (branchId: string) => {
-    // Evitar seleccionar "all" o valores vacíos
-    if (branchId === 'all' || !branchId) return;
-    
-    const branch = branches.find((b) => b.id === branchId);
-    if (branch) {
-      setSelectedBranch(branch);
-      // Guardar en localStorage como backup
-      localStorage.setItem('admin_selected_branch_id', branch.id);
-    }
+  const handleLogout = async () => {
+    await logout();
+    setUser(null);
+    clearBranchData(); // ← LIMPIAR DATOS DE SUCURSAL
+    router.push('/login');
   };
 
-  const getInitials = (name: string) => {
-    return name
-      .split(' ')
-      .map((n) => n[0])
-      .join('')
-      .toUpperCase()
-      .slice(0, 2);
-  };
-
-  // Determinar si el selector debe estar deshabilitado
-  const isSelectorDisabled = !isAdmin && !!user?.branch_id;
+  const displayName = selectedBranch?.business_name || selectedBranch?.name || 'Sin Sucursal';
+  const branchSubtitle = selectedBranch?.business_name
+    ? (selectedBranch?.name || 'Sucursal')
+    : (theme.logoSubtitle || 'Sistema de Gestión');
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6">
-      {/* Branch Selector */}
-      <div className="flex items-center gap-3">
-        <Building2 className="h-5 w-5 text-gray-500" />
-        <Select
-          value={selectedBranch?.id || ''}
-          onValueChange={handleBranchChange}
-          disabled={isSelectorDisabled}
-        >
-          <SelectTrigger className="w-[250px]">
-            <SelectValue placeholder={loading ? 'Cargando...' : 'Seleccionar sucursal'} />
-          </SelectTrigger>
-          <SelectContent>
-            {/* ELIMINADO: SelectItem con value="" que causaba el error */}
-            
-            {branches.map((branch) => (
-  <SelectItem key={branch.id} value={branch.id}>
-    <div className="flex items-center justify-between w-full min-w-[200px]">
-      <div className="flex flex-col items-start">
-        <span className="font-medium">
-          {branch.branch_config?.business_name || branch.name}
-        </span>
-        {branch.branch_config?.business_name && (
-          <span className="text-xs text-gray-500">{branch.name}</span>
-        )}
-      </div>
-      {selectedBranch?.id === branch.id && (
-        <Check className="h-4 w-4 ml-2 text-blue-600 shrink-0" />
-      )}
-    </div>
-  </SelectItem>
-))}
-          </SelectContent>
-        </Select>
-        
-        {/* Indicador de Admin */}
-        {isAdmin && selectedBranch && (
-          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-            Modo Admin
-          </span>
+    <header className="h-16 border-b flex items-center justify-between px-4 lg:px-6 sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {theme.logoUrl ? (
+            <img
+              src={theme.logoUrl}
+              alt="Logo"
+              className="h-10 w-auto object-contain max-w-[140px]"
+            />
+          ) : (
+            <div
+              className="h-10 w-10 rounded-lg flex items-center justify-center"
+              style={{ backgroundColor: `hsl(${theme.colors.primary})` }}
+            >
+              <Building2 className="h-5 w-5 text-white" />
+            </div>
+          )}
+          <div className="hidden md:block">
+            <h1 className="font-bold text-lg leading-tight text-foreground">
+              {displayName}
+            </h1>
+            <p className="text-xs text-muted-foreground">{branchSubtitle}</p>
+          </div>
+        </div>
+
+        {user?.role === 'admin' && branches.length > 1 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="ml-4 gap-2">
+                <Building2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Cambiar Sucursal</span>
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-64">
+              <DropdownMenuLabel>Seleccionar Sucursal</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {branches.map((branch) => (
+                <DropdownMenuItem
+                  key={branch.id}
+                  onClick={() => setSelectedBranch(branch)}
+                  className={cn(
+                    'flex flex-col items-start py-2',
+                    selectedBranch?.id === branch.id && 'bg-accent'
+                  )}
+                >
+                  <span className="font-medium">
+                    {branch.business_name || branch.name}
+                  </span>
+                  {branch.business_name && (
+                    <span className="text-xs text-muted-foreground">
+                      {branch.name}
+                    </span>
+                  )}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 
-      {/* User Profile */}
-      <DropdownMenu>
-        <DropdownMenuTrigger className="flex items-center gap-3 outline-none">
-          <div className="text-right hidden sm:block">
-            <p className="text-sm font-medium text-gray-900">{user?.full_name}</p>
-            <p className="text-xs text-gray-500 capitalize">
-              {user?.role === 'admin' ? 'Administrador' : user?.role === 'cashier' ? 'Cajero' : 'Mecánico'}
-            </p>
-          </div>
-          <Avatar className="h-9 w-9">
-            <AvatarFallback className="bg-blue-600 text-white text-sm">
-              {user?.full_name ? getInitials(user.full_name) : 'U'}
-            </AvatarFallback>
-          </Avatar>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem>
-            <User className="mr-2 h-4 w-4" />
-            <span>Perfil</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            <Building2 className="mr-2 h-4 w-4" />
-            <span>
-  Sucursal: {selectedBranch?.branch_config?.business_name || selectedBranch?.name || 'No seleccionada'}
-</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="flex items-center gap-4">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+              <Avatar className="h-8 w-8">
+                <AvatarFallback className="bg-primary text-primary-foreground">
+                  {user?.full_name?.charAt(0) || 'U'}
+                </AvatarFallback>
+              </Avatar>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent className="w-56" align="end" forceMount>
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex flex-col space-y-1">
+                <p className="text-sm font-medium leading-none">{user?.full_name}</p>
+                <p className="text-xs leading-none text-muted-foreground">
+                  {user?.email}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Sucursal: {selectedBranch?.name || 'No asignada'}
+                </p>
+                {selectedBranch?.business_name && (
+                  <p className="text-xs text-muted-foreground">
+                    {selectedBranch.business_name}
+                  </p>
+                )}
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              <span>Cerrar sesión</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </header>
   );
 }

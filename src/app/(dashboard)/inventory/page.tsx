@@ -1,9 +1,10 @@
-﻿'use client';
+﻿// src/app/(dashboard)/inventory/page.tsx
+'use client';
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, Variants } from 'framer-motion';
 import {
-  Search, Plus, Edit2, Trash2, AlertTriangle, Package,
+  Search, Plus, Edit2, Trash2, AlertTriangle,
   Loader2, Upload, Download, Scan, FileDown
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
@@ -12,7 +13,6 @@ import { z } from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -45,9 +45,9 @@ import { toast } from '@/hooks/use-toast';
 import { Product } from '@/types/database';
 import { BarcodeScanner } from '@/components/BarcodeScanner';
 import { InventoryTable } from '@/components/inventory/InventoryTable';
-import { useBackgroundImport } from '@/hooks/useBackgroundImport';
-import { ImportProgressToast } from '@/components/inventory/ImportProgressToast';
+import { useSmartImport } from '@/hooks/useSmartImport';
 import { ImportPreviewModal } from '@/components/inventory/ImportPreviewModal';
+import { ImportProgressToast } from '@/components/inventory/ImportProgressToast';
 
 const productSchema = z.object({
   name: z.string().min(1, 'Nombre requerido'),
@@ -64,7 +64,6 @@ const productSchema = z.object({
 
 type ProductForm = z.infer<typeof productSchema>;
 
-// Variantes de animación suaves (consistentes con dashboard)
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
   visible: {
@@ -107,7 +106,6 @@ const dialogVariants: Variants = {
   },
 };
 
-// Hook useDebounce local (puedes moverlo a hooks/useDebounce.ts)
 function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
 
@@ -115,10 +113,7 @@ function useDebounce<T>(value: T, delay: number): T {
     const handler = setTimeout(() => {
       setDebouncedValue(value);
     }, delay);
-
-    return () => {
-      clearTimeout(handler);
-    };
+    return () => clearTimeout(handler);
   }, [value, delay]);
 
   return debouncedValue;
@@ -129,20 +124,27 @@ export default function InventoryPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const debouncedSearch = useDebounce(searchQuery, 300); // 300ms debounce
+  const debouncedSearch = useDebounce(searchQuery, 300);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Estados para importación en segundo plano
-  const { activeImports, startImport, dismissImport } = useBackgroundImport();
+  // NUEVO: Importación inteligente
+  const { 
+    isProcessing, 
+    progress, 
+    result, 
+    processFile, 
+    executeImport, 
+    applyAutoFixes,
+    reset 
+  } = useSmartImport();
+  
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [importPreview, setImportPreview] = useState<any[]>([]);
-  const [importErrors, setImportErrors] = useState<string[]>([]);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Estado para escáner
+  // Escáner
   const [scannerOpen, setScannerOpen] = useState(false);
   const [continuousMode, setContinuousMode] = useState(true);
 
@@ -151,7 +153,7 @@ export default function InventoryPage() {
     handleSubmit,
     watch,
     setValue,
-    reset,
+    reset: resetForm,
     formState: { errors },
   } = useForm<ProductForm>({
     resolver: zodResolver(productSchema),
@@ -169,23 +171,27 @@ export default function InventoryPage() {
   const costPrice = watch('cost_price');
   const productType = watch('type');
 
-  // Mapa de productos para validación rápida en escáner
-  const productsMap = useMemo(() => {
-    const map = new Map<string, { name: string; stock: number }>();
+  // Mapa de productos existentes para detectar duplicados
+  const existingProductsMap = useMemo(() => {
+    const map = new Map<string, Product>();
     products.forEach(p => {
-      if (p.barcode) {
-        map.set(p.barcode, { name: p.name, stock: p.stock });
-      }
+      if (p.barcode) map.set(p.barcode, p);
     });
     return map;
   }, [products]);
 
-  // Productos con stock bajo
+  const productsMap = useMemo(() => {
+    const map = new Map<string, { name: string; stock: number }>();
+    products.forEach(p => {
+      if (p.barcode) map.set(p.barcode, { name: p.name, stock: p.stock });
+    });
+    return map;
+  }, [products]);
+
   const lowStockProducts = useMemo(() => {
     return products.filter((p) => p.stock < p.min_stock || p.stock === 0);
   }, [products]);
 
-  // Precio sugerido basado en tipo
   const suggestedPrice = useMemo(() => {
     if (costPrice && productType) {
       const multipliers: Record<string, number> = { A: 1.4, B: 1.6, C: 1.5, D: 2.0 };
@@ -197,7 +203,6 @@ export default function InventoryPage() {
   useEffect(() => {
     async function loadProducts() {
       if (!selectedBranch) return;
-
       try {
         setLoading(true);
         const data = await getProducts(selectedBranch.id);
@@ -212,73 +217,21 @@ export default function InventoryPage() {
         setLoading(false);
       }
     }
-
     loadProducts();
   }, [selectedBranch]);
 
-  const handleExport = () => {
-    if (!selectedBranch) return;
-    exportProductsToExcel(products, selectedBranch.name);
-    toast({ title: 'Excel exportado correctamente' });
-  };
-
+  // NUEVO: Manejar subida de archivo con sistema inteligente
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !selectedBranch) return;
 
-    // Usar el worker para parsear y validar antes de mostrar preview
-    const worker = new Worker(
-      new URL('@/lib/workers/excel.worker.ts', import.meta.url)
-    );
-
-    worker.onmessage = (e) => {
-      const { type, payload } = e.data;
-
-      if (type === 'PARSE_RESULT') {
-        // Validar filas
-        worker.postMessage({
-          type: 'VALIDATE_ROWS',
-          payload: { rows: payload.data }
-        });
-      }
-
-      if (type === 'VALIDATE_RESULT') {
-        setImportPreview(payload.validRows.map((row: any) => ({
-          barcode: row['Código de Barras']?.toString() || null,
-          name: row['Nombre'],
-          description: row['Descripción'] || null,
-          type: String(row['Tipo (A/B/C/D)'] || row['type']).toUpperCase(),
-          cost_price: Number(row['Precio Costo'] || row['cost_price']),
-          sale_price: Number(row['Precio Venta'] || row['sale_price']),
-          stock: Number(row['Stock'] || row['stock']),
-          min_stock: Number(row['Stock Mínimo'] || row['min_stock']),
-          unit: row['Unidad'] || row['unit'],
-        })));
-        
-        setImportErrors(payload.errors);
-        setPendingFile(file);
-        setImportDialogOpen(true);
-        worker.terminate();
-      }
-
-      if (type === 'ERROR') {
-        toast({
-          title: 'Error',
-          description: payload.message,
-          variant: 'destructive',
-        });
-        worker.terminate();
-      }
-    };
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      worker.postMessage({
-        type: 'PARSE_EXCEL',
-        payload: { fileData: e.target?.result }
-      });
-    };
-    reader.readAsArrayBuffer(file);
+    try {
+      // Procesar con sistema inteligente
+      await processFile(file, selectedBranch.id, existingProductsMap);
+      setImportDialogOpen(true);
+    } catch (error) {
+      console.error('Error procesando archivo:', error);
+    }
 
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -286,38 +239,45 @@ export default function InventoryPage() {
   };
 
   const handleImportConfirm = async () => {
-    if (!pendingFile || !selectedBranch) return;
+    if (!result || !selectedBranch) return;
     
+    setIsImporting(true);
+    const { success } = await executeImport(result.validProducts, selectedBranch.id);
+    
+    if (success) {
+      // Recargar productos
+      const updated = await getProducts(selectedBranch.id);
+      setProducts(updated);
+      setImportDialogOpen(false);
+      reset();
+    }
+    
+    setIsImporting(false);
+  };
+
+  const handleCloseImportModal = () => {
     setImportDialogOpen(false);
-    
-    // Iniciar importación en segundo plano
-    await startImport(pendingFile, selectedBranch.id, () => {
-      // Callback cuando termine - recargar productos
-      getProducts(selectedBranch.id).then(setProducts);
-    });
-    
-    setPendingFile(null);
-    setImportPreview([]);
-    setImportErrors([]);
+    reset();
+  };
+
+  // Resto de handlers...
+  const handleExport = () => {
+    if (!selectedBranch) return;
+    exportProductsToExcel(products, selectedBranch.name);
+    toast({ title: 'Excel exportado correctamente' });
   };
 
   const handleScanBarcode = (barcode: string, mode: 'camera' | 'hid') => {
     const existingProduct = products.find(p => p.barcode === barcode);
-
     if (existingProduct) {
-      // Si existe y NO estamos en modo continuo, abrir para editar
-      if (!continuousMode) {
-        handleOpenDialog(existingProduct);
-      }
-
+      if (!continuousMode) handleOpenDialog(existingProduct);
       toast({
         title: mode === 'hid' ? '📟 Escáner USB' : '📷 Cámara',
         description: `${existingProduct.name} - Stock: ${existingProduct.stock}`,
       });
     } else {
-      // Si no existe, abrir formulario nuevo con barcode prellenado
       setEditingProduct(null);
-      reset({
+      resetForm({
         name: '',
         barcode: barcode,
         description: '',
@@ -330,7 +290,6 @@ export default function InventoryPage() {
         is_active: true,
       });
       setDialogOpen(true);
-
       toast({
         title: 'Nuevo producto detectado',
         description: `Código: ${barcode}. Complete los datos.`,
@@ -341,7 +300,7 @@ export default function InventoryPage() {
   const handleOpenDialog = (product?: Product) => {
     if (product) {
       setEditingProduct(product);
-      reset({
+      resetForm({
         name: product.name,
         barcode: product.barcode || '',
         description: product.description || '',
@@ -355,7 +314,7 @@ export default function InventoryPage() {
       });
     } else {
       setEditingProduct(null);
-      reset({
+      resetForm({
         name: '',
         barcode: '',
         description: '',
@@ -373,10 +332,8 @@ export default function InventoryPage() {
 
   const onSubmit = async (data: ProductForm) => {
     if (!selectedBranch) return;
-
     try {
       setSaving(true);
-
       if (editingProduct) {
         await updateProduct(editingProduct.id, {
           ...data,
@@ -391,7 +348,6 @@ export default function InventoryPage() {
         });
         toast({ title: 'Producto creado' });
       }
-
       const updatedProducts = await getProducts(selectedBranch.id);
       setProducts(updatedProducts);
       setDialogOpen(false);
@@ -408,7 +364,6 @@ export default function InventoryPage() {
 
   const handleDelete = async (productId: string) => {
     if (!confirm('¿Está seguro de eliminar este producto?')) return;
-
     try {
       await deleteProduct(productId);
       setProducts((prev) => prev.filter((p) => p.id !== productId));
@@ -433,7 +388,6 @@ export default function InventoryPage() {
           className="flex flex-col items-center gap-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.3 }}
         >
           <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
           <p className="text-gray-400">Cargando inventario...</p>
@@ -459,27 +413,15 @@ export default function InventoryPage() {
             </p>
           </div>
           <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              onClick={() => setScannerOpen(true)}
-              className="border-slate-200 hover:bg-slate-50 text-slate-700"
-            >
+            <Button variant="outline" onClick={() => setScannerOpen(true)} className="border-slate-200 hover:bg-slate-50 text-slate-700">
               <Scan className="h-4 w-4 mr-2" />
               Escanear
             </Button>
-            <Button
-              variant="outline"
-              onClick={handleExport}
-              className="border-slate-200 hover:bg-slate-50 text-slate-700"
-            >
+            <Button variant="outline" onClick={handleExport} className="border-slate-200 hover:bg-slate-50 text-slate-700">
               <Download className="h-4 w-4 mr-2" />
               Exportar Excel
             </Button>
-            <Button
-              variant="outline"
-              onClick={downloadTemplate}
-              className="border-slate-200 hover:bg-slate-50 text-slate-700"
-            >
+            <Button variant="outline" onClick={downloadTemplate} className="border-slate-200 hover:bg-slate-50 text-slate-700">
               <FileDown className="h-4 w-4 mr-2" />
               Template
             </Button>
@@ -501,10 +443,7 @@ export default function InventoryPage() {
                 Importar Excel
               </Button>
             </div>
-            <Button
-              onClick={() => handleOpenDialog()}
-              className="bg-slate-800 hover:bg-slate-700 text-white"
-            >
+            <Button onClick={() => handleOpenDialog()} className="bg-slate-800 hover:bg-slate-700 text-white">
               <Plus className="h-4 w-4 mr-2" />
               Nuevo Producto
             </Button>
@@ -550,7 +489,7 @@ export default function InventoryPage() {
           />
         </motion.div>
 
-        {/* Products Table - VIRTUALIZADA */}
+        {/* Products Table */}
         <motion.div variants={itemVariants}>
           <InventoryTable
             products={products}
@@ -580,28 +519,14 @@ export default function InventoryPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-sm text-gray-600">Nombre *</Label>
-                        <Input
-                          {...register('name')}
-                          className="border-slate-200 focus:border-slate-400 focus:ring-slate-200"
-                        />
-                        {errors.name && (
-                          <p className="text-xs text-red-500">{errors.name.message}</p>
-                        )}
+                        <Input {...register('name')} className="border-slate-200" />
+                        {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
                       </div>
                       <div className="space-y-2">
                         <Label className="text-sm text-gray-600">Código de Barras</Label>
                         <div className="flex gap-2">
-                          <Input
-                            {...register('barcode')}
-                            className="border-slate-200 focus:border-slate-400 focus:ring-slate-200"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="icon"
-                            onClick={() => setScannerOpen(true)}
-                            className="border-slate-200 hover:bg-slate-50"
-                          >
+                          <Input {...register('barcode')} className="border-slate-200" />
+                          <Button type="button" variant="outline" size="icon" onClick={() => setScannerOpen(true)} className="border-slate-200">
                             <Scan className="h-4 w-4 text-slate-600" />
                           </Button>
                         </div>
@@ -610,20 +535,14 @@ export default function InventoryPage() {
 
                     <div className="space-y-2">
                       <Label className="text-sm text-gray-600">Descripción</Label>
-                      <Input
-                        {...register('description')}
-                        className="border-slate-200 focus:border-slate-400 focus:ring-slate-200"
-                      />
+                      <Input {...register('description')} className="border-slate-200" />
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-sm text-gray-600">Tipo *</Label>
-                        <Select
-                          value={watch('type')}
-                          onValueChange={(v: 'A' | 'B' | 'C' | 'D') => setValue('type', v)}
-                        >
-                          <SelectTrigger className="border-slate-200 focus:ring-slate-200">
+                        <Select value={watch('type')} onValueChange={(v: 'A' | 'B' | 'C' | 'D') => setValue('type', v)}>
+                          <SelectTrigger className="border-slate-200">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -636,32 +555,19 @@ export default function InventoryPage() {
                       </div>
                       <div className="space-y-2">
                         <Label className="text-sm text-gray-600">Unidad *</Label>
-                        <Input
-                          {...register('unit')}
-                          className="border-slate-200 focus:border-slate-400 focus:ring-slate-200"
-                        />
+                        <Input {...register('unit')} className="border-slate-200" />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-sm text-gray-600">Precio de Costo *</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          {...register('cost_price', { valueAsNumber: true })}
-                          className="border-slate-200 focus:border-slate-400 focus:ring-slate-200"
-                        />
+                        <Input type="number" step="0.01" {...register('cost_price', { valueAsNumber: true })} className="border-slate-200" />
                       </div>
                       <div className="space-y-2">
                         <Label className="text-sm text-gray-600">Precio de Venta *</Label>
                         <div className="flex gap-2">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            {...register('sale_price', { valueAsNumber: true })}
-                            className="border-slate-200 focus:border-slate-400 focus:ring-slate-200"
-                          />
+                          <Input type="number" step="0.01" {...register('sale_price', { valueAsNumber: true })} className="border-slate-200" />
                         </div>
                       </div>
                     </div>
@@ -680,13 +586,7 @@ export default function InventoryPage() {
                             {formatCurrency(suggestedPrice)}
                           </p>
                         </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={applySuggestedPrice}
-                          className="border-blue-200 text-blue-700 hover:bg-blue-50"
-                        >
+                        <Button type="button" variant="outline" size="sm" onClick={applySuggestedPrice} className="border-blue-200 text-blue-700 hover:bg-blue-50">
                           Aplicar
                         </Button>
                       </motion.div>
@@ -695,45 +595,24 @@ export default function InventoryPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label className="text-sm text-gray-600">Stock Actual *</Label>
-                        <Input
-                          type="number"
-                          {...register('stock', { valueAsNumber: true })}
-                          className="border-slate-200 focus:border-slate-400 focus:ring-slate-200"
-                        />
+                        <Input type="number" {...register('stock', { valueAsNumber: true })} className="border-slate-200" />
                       </div>
                       <div className="space-y-2">
                         <Label className="text-sm text-gray-600">Stock Mínimo *</Label>
-                        <Input
-                          type="number"
-                          {...register('min_stock', { valueAsNumber: true })}
-                          className="border-slate-200 focus:border-slate-400 focus:ring-slate-200"
-                        />
+                        <Input type="number" {...register('min_stock', { valueAsNumber: true })} className="border-slate-200" />
                       </div>
                     </div>
 
                     <div className="flex items-center gap-3 py-2">
-                      <Switch
-                        checked={watch('is_active')}
-                        onCheckedChange={(v) => setValue('is_active', v)}
-                        className="data-[state=checked]:bg-emerald-500"
-                      />
+                      <Switch checked={watch('is_active')} onCheckedChange={(v) => setValue('is_active', v)} className="data-[state=checked]:bg-emerald-500" />
                       <Label className="text-sm text-gray-600">Producto activo</Label>
                     </div>
 
                     <DialogFooter className="gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setDialogOpen(false)}
-                        className="border-slate-200 text-slate-700 hover:bg-slate-50"
-                      >
+                      <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} className="border-slate-200 text-slate-700 hover:bg-slate-50">
                         Cancelar
                       </Button>
-                      <Button
-                        type="submit"
-                        disabled={saving}
-                        className="bg-slate-800 hover:bg-slate-700 text-white"
-                      >
+                      <Button type="submit" disabled={saving} className="bg-slate-800 hover:bg-slate-700 text-white">
                         {saving ? 'Guardando...' : editingProduct ? 'Guardar Cambios' : 'Crear Producto'}
                       </Button>
                     </DialogFooter>
@@ -744,20 +623,22 @@ export default function InventoryPage() {
           )}
         </AnimatePresence>
 
-        {/* Import Preview Modal - NUEVO */}
-        <ImportPreviewModal
-          isOpen={importDialogOpen}
-          onClose={() => {
-            setImportDialogOpen(false);
-            setPendingFile(null);
-          }}
-          onConfirm={handleImportConfirm}
-          preview={importPreview}
-          errors={importErrors}
-          isImporting={false}
-        />
+        {/* NUEVO: Modal de Importación Inteligente */}
+        {result && (
+          <ImportPreviewModal
+            isOpen={importDialogOpen}
+            onClose={handleCloseImportModal}
+            onConfirm={handleImportConfirm}
+            onAutoFix={applyAutoFixes}
+            preview={result.validProducts}
+            errors={result.errors}
+            warnings={result.warnings}
+            isImporting={isImporting}
+            autoFixableCount={result.autoFixableCount}
+          />
+        )}
 
-        {/* Barcode Scanner - MEJORADO CON DUAL MODE */}
+        {/* Barcode Scanner */}
         <BarcodeScanner
           isOpen={scannerOpen}
           onClose={() => setScannerOpen(false)}
@@ -767,11 +648,23 @@ export default function InventoryPage() {
         />
       </motion.div>
 
-      {/* Toast de progreso de importación - NUEVO */}
-      <ImportProgressToast 
-        imports={activeImports} 
-        onDismiss={dismissImport} 
-      />
+      {/* Toast de progreso (para importaciones grandes) */}
+      {isProcessing && (
+        <div className="fixed bottom-4 right-4 z-50 bg-white p-4 rounded-lg shadow-lg border border-slate-200 w-80">
+          <div className="flex items-center gap-3">
+            <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+            <div className="flex-1">
+              <p className="font-medium text-sm text-gray-900">{progress.stage}</p>
+              <div className="w-full bg-slate-100 rounded-full h-2 mt-2">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all" 
+                  style={{ width: `${progress.percent}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
-}
+} // lzon nyhw ijap prmh

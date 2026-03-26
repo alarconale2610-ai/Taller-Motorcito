@@ -1,27 +1,33 @@
+// src/components/inventory/ImportPreviewModal.tsx
 'use client';
 
 import { motion } from 'framer-motion';
 import { 
   FileSpreadsheet, 
-  AlertTriangle, 
   X,
-  Upload
+  Upload,
+  AlertTriangle,
+  CheckCircle2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { getProductTypeColor } from '@/lib/utils';
+import { ImportErrorDetails } from './ImportErrorDetails';
+import { SanitizedProduct, ValidationError } from '@/lib/excel-sanitizer';
 
 interface ImportPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: () => void;
-  preview: any[];
-  errors: string[];
+  onAutoFix?: () => void;
+  preview: SanitizedProduct[];
+  errors: ValidationError[];
+  warnings: ValidationError[];
   isImporting: boolean;
+  autoFixableCount: number;
 }
 
-// Helper para formatear números seguros - EVITA NaN
 function formatSafeNumber(value: any): string {
   if (value === undefined || value === null || value === '') return '-';
   const num = Number(value);
@@ -29,7 +35,6 @@ function formatSafeNumber(value: any): string {
   return num.toString();
 }
 
-// Helper para formatear moneda segura
 function formatSafeCurrency(value: any): string {
   if (value === undefined || value === null || value === '') return '-';
   const num = Number(value);
@@ -41,14 +46,17 @@ export function ImportPreviewModal({
   isOpen,
   onClose,
   onConfirm,
+  onAutoFix,
   preview,
   errors,
-  isImporting
+  warnings,
+  isImporting,
+  autoFixableCount
 }: ImportPreviewModalProps) {
   if (!isOpen) return null;
 
   const hasErrors = errors.length > 0;
-  const canImport = preview.length > 0 && !isImporting;
+  const canImport = preview.length > 0 && !isImporting && errors.length === 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -56,7 +64,7 @@ export function ImportPreviewModal({
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+        className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-100">
@@ -64,10 +72,23 @@ export function ImportPreviewModal({
             <h2 className="text-xl font-semibold text-gray-900">
               Vista Previa de Importación
             </h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Productos válidos para importar: {' '}
-              <span className="font-semibold text-gray-900">{preview.length}</span>
-            </p>
+            <div className="flex items-center gap-4 mt-1">
+              <p className="text-sm text-gray-500">
+                Productos válidos: <span className="font-semibold text-gray-900">{preview.length}</span>
+              </p>
+              {errors.length > 0 && (
+                <span className="flex items-center gap-1 text-sm text-red-600">
+                  <AlertTriangle className="w-4 h-4" />
+                  {errors.length} errores
+                </span>
+              )}
+              {warnings.length > 0 && (
+                <span className="flex items-center gap-1 text-sm text-amber-600">
+                  <AlertTriangle className="w-4 h-4" />
+                  {warnings.length} advertencias
+                </span>
+              )}
+            </div>
           </div>
           <button 
             onClick={onClose}
@@ -77,70 +98,77 @@ export function ImportPreviewModal({
           </button>
         </div>
 
-        {/* Alerta de errores */}
-        {hasErrors && (
-          <div className="mx-6 mt-4 p-4 bg-red-50 border border-red-100 rounded-lg flex gap-3">
-            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
-            <div className="flex-1">
-              <p className="font-medium text-red-800 text-sm">
-                Se encontraron {errors.length} errores
-              </p>
-              <p className="text-xs text-red-600 mt-1">
-                Los productos con errores no serán importados. Revise el archivo Excel.
-              </p>
-            </div>
-          </div>
-        )}
+        <div className="flex-1 overflow-auto p-6 space-y-4">
+          {/* Errores Detallados */}
+          {(errors.length > 0 || warnings.length > 0) && (
+            <ImportErrorDetails 
+              errors={errors} 
+              warnings={warnings}
+              onAutoFix={onAutoFix}
+              autoFixableCount={autoFixableCount}
+            />
+          )}
 
-        {/* Tabla de preview */}
-        <div className="flex-1 overflow-hidden m-6 mt-4 border border-slate-200 rounded-lg">
-          <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-slate-50 border-b text-xs font-medium text-gray-500 uppercase tracking-wider">
-            <div className="col-span-4">Nombre</div>
-            <div className="col-span-2">Tipo</div>
-            <div className="col-span-2 text-center">Stock</div>
-            <div className="col-span-2 text-right">Costo</div>
-            <div className="col-span-2 text-right">Venta</div>
-          </div>
-          
-          <ScrollArea className="h-64">
-            <div className="divide-y divide-slate-100">
-              {preview.map((product, idx) => (
-                <div 
-                  key={idx} 
-                  className="grid grid-cols-12 gap-4 px-4 py-3 items-center hover:bg-slate-50/50 text-sm"
-                >
-                  <div className="col-span-4">
-                    <p className="font-medium text-gray-900 truncate">
-                      {product.name || 'Sin nombre'}
-                    </p>
-                    {product.barcode && (
-                      <p className="text-xs text-gray-400 font-mono truncate">
-                        {product.barcode}
-                      </p>
-                    )}
-                  </div>
-                  <div className="col-span-2">
-                    <Badge className={`${getProductTypeColor(product.type || 'A')} text-white text-xs font-normal`}>
-                      {product.type || 'A'}
-                    </Badge>
-                  </div>
-                  <div className="col-span-2 text-center text-gray-600">
-                    {formatSafeNumber(product.stock)}
-                  </div>
-                  <div className="col-span-2 text-right text-gray-600">
-                    {formatSafeCurrency(product.cost_price)}
-                  </div>
-                  <div className="col-span-2 text-right text-gray-600">
-                    {formatSafeCurrency(product.sale_price)}
-                  </div>
-                </div>
-              ))}
+          {/* Tabla de Preview */}
+          <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="grid grid-cols-12 gap-4 px-4 py-3 bg-slate-50 border-b text-xs font-medium text-gray-500 uppercase tracking-wider">
+              <div className="col-span-4">Nombre</div>
+              <div className="col-span-2">Tipo</div>
+              <div className="col-span-2 text-center">Stock</div>
+              <div className="col-span-2 text-right">Costo</div>
+              <div className="col-span-2 text-right">Venta</div>
             </div>
-          </ScrollArea>
+            
+            <ScrollArea className="h-48">
+              <div className="divide-y divide-slate-100">
+                {preview.map((product, idx) => (
+                  <div 
+                    key={idx} 
+                    className="grid grid-cols-12 gap-4 px-4 py-3 items-center hover:bg-slate-50/50 text-sm"
+                  >
+                    <div className="col-span-4">
+                      <p className="font-medium text-gray-900 truncate">
+                        {product.name || 'Sin nombre'}
+                      </p>
+                      {product.barcode && (
+                        <p className="text-xs text-gray-400 font-mono truncate">
+                          {product.barcode}
+                        </p>
+                      )}
+                    </div>
+                    <div className="col-span-2">
+                      <Badge className={`${getProductTypeColor(product.type)} text-white text-xs font-normal`}>
+                        {product.type}
+                      </Badge>
+                    </div>
+                    <div className="col-span-2 text-center text-gray-600">
+                      {formatSafeNumber(product.stock)}
+                    </div>
+                    <div className="col-span-2 text-right text-gray-600">
+                      {formatSafeCurrency(product.cost_price)}
+                    </div>
+                    <div className="col-span-2 text-right text-gray-600">
+                      {formatSafeCurrency(product.sale_price)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+
+          {/* Mensaje de éxito si todo está bien */}
+          {!hasErrors && preview.length > 0 && (
+            <div className="flex items-center gap-2 p-4 bg-green-50 text-green-700 rounded-lg">
+              <CheckCircle2 className="w-5 h-5" />
+              <span className="text-sm font-medium">
+                Todo listo para importar {preview.length} productos
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
-        <div className="p-6 pt-0 flex items-center justify-end gap-3">
+        <div className="p-6 pt-0 flex items-center justify-end gap-3 border-t border-slate-100 mt-4 pt-4">
           <Button
             variant="outline"
             onClick={onClose}

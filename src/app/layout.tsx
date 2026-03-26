@@ -1,9 +1,13 @@
 import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
 import './globals.css';
+import { ThemeProvider } from '@/components/theme/ThemeProvider';
+
+const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'TALLERWEB - Sistema de Gestion',
-  description: 'Sistema POS para Taller Mecanico Multi-Sucursal',
+  title: 'Taller Motorcito - Sistema de Gestión',
+  description: 'Sistema POS para Taller Mecánico Multi-Sucursal',
 };
 
 export default function RootLayout({
@@ -12,8 +16,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang='es'>
-      <body className='antialiased'>{children}</body>
+    <html lang='es' suppressHydrationWarning>
+      <body className={`${inter.className} antialiased`}>
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   );
 }

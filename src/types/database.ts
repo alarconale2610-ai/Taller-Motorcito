@@ -1,13 +1,17 @@
-// src/types/database.ts - CORREGIDO
+// src/types/database.ts - CORREGIDO Y LIMPIO
 
 export interface Branch {
   id: string;
   name: string;
   address: string | null;
+  config?: BranchConfig;
+  business_name?: string;
   phone: string | null;
-   branch_config?: {
+  branch_config?: {
     business_name: string;
   } | null;
+  is_active?: boolean;  // ✅ AGREGADO (lo usa PublicThemeLoader)
+  created_at?: string;  // ✅ AGREGADO (lo usa PublicThemeLoader)
 }
 
 export interface Profile {
@@ -42,7 +46,6 @@ export interface CartItem {
   total: number;
 }
 
-// SaleItem ANTES de Sale (para evitar errores de referencia)
 export interface SaleItem {
   id: string;
   sale_id?: string;
@@ -53,7 +56,6 @@ export interface SaleItem {
   total: number;
 }
 
-// Sale UNIFICADO (solo una definición con todos los campos)
 export interface Sale {
   id: string;
   branch_id: string;
@@ -106,7 +108,6 @@ export interface Vehicle {
   current_km: number;
 }
 
-// Worker UNIFICADO (solo una definición)
 export interface Worker {
   id: string;
   branch_id: string;
@@ -131,7 +132,7 @@ export interface WorkerConsumption {
   consumed_at: string;
   paid_at?: string;
   notes?: string;
-  payment_method?: 'cash' | 'transfer' | 'card'; // AGREGADO para el error de línea 775
+  payment_method?: 'cash' | 'transfer' | 'card';
 }
 
 export interface BranchConfig {
@@ -149,9 +150,13 @@ export interface BranchConfig {
   iva_percent: number;
   receipt_header?: string;
   receipt_footer?: string;
- 
+  primary_color?: string;
+  sidebar_color?: string;
+  logo_text?: string;
+  logo_subtitle?: string;
+  logo_url?: string;
+  logo_base64?: string;
 }
-
 
 export interface DocumentSequence {
   id: string;
@@ -176,7 +181,27 @@ export interface WorkOrderItem {
   product?: Product;
 }
 
-// Database type CORREGIDO y COMPLETO
+export interface InvoiceHtmlTemp {
+  id: string;
+  invoice_id: string;
+  html_content: string;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface EmailLog {
+  id?: string;
+  invoice_id: string;
+  recipient: string;
+  subject: string;
+  message_id?: string;
+  sent_by: string;
+  status: 'sent' | 'failed' | 'pending';
+  sent_at: string;
+  error_message?: string;
+}
+
+// Database type ÚNICO Y COMPLETO
 export type Database = {
   public: {
     Tables: {
@@ -239,6 +264,16 @@ export type Database = {
         Row: WorkOrderItem;
         Insert: Partial<WorkOrderItem>;
         Update: Partial<WorkOrderItem>;
+      };
+      invoice_html_temp: {
+        Row: InvoiceHtmlTemp;
+        Insert: Partial<InvoiceHtmlTemp>;
+        Update: Partial<InvoiceHtmlTemp>;
+      };
+      email_logs: {
+        Row: EmailLog;
+        Insert: Partial<EmailLog>;
+        Update: Partial<EmailLog>;
       };
     };
   };

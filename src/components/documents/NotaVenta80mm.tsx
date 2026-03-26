@@ -62,327 +62,326 @@ export function NotaVenta80mm({
     const header = cleanText(branchConfig?.receipt_header);
     const footer = cleanText(branchConfig?.receipt_footer) || '¡Gracias por su preferencia!\nDocumento sin valor tributario';
 
-    // Cálculos
-    const total = items.reduce((sum, item) => sum + (item.total_price || 0), 0);
-    const ivaRate = ivaPercent / 100;
-    const subtotal = total / (1 + ivaRate);
-    const iva = total - subtotal;
+    // Cálculos corregidos (IVA se suma al subtotal)
+    const subtotal = items.reduce((sum, item) => sum + (item.total_price || 0), 0);
+    const iva = subtotal * (ivaPercent / 100);
+    const total = subtotal + iva;
 
     // HTML completo para impresión térmica
     const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>NOTA DE VENTA - ${documentNumber}</title>
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 12px;
-            line-height: 1.4;
-            width: 80mm;
-            padding: 3mm;
-            color: #000;
-            background: #fff;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          
-          /* HEADER */
-          .header {
-            text-align: center;
-            border-bottom: 3px double #000;
-            padding-bottom: 10px;
-            margin-bottom: 10px;
-          }
-          .business-name {
-            font-size: 16px;
-            font-weight: bold;
-            text-transform: uppercase;
-            margin-bottom: 5px;
-          }
-          .ruc-box {
-            border: 2px solid #000;
-            display: inline-block;
-            padding: 2px 8px;
-            margin: 5px 0;
-            font-weight: bold;
-            font-size: 11px;
-          }
-          .business-info {
-            font-size: 11px;
-            line-height: 1.5;
-          }
-          
-          /* CUSTOM HEADER */
-          .custom-header {
-            text-align: center;
-            font-style: italic;
-            font-size: 10px;
-            margin: 8px 0;
-            padding: 5px;
-            background: #f5f5f5;
-            border-left: 3px solid #000;
-          }
-          
-          /* DOCUMENTO BOX */
-          .doc-box {
-            border: 2px solid #000;
-            padding: 10px;
-            margin: 10px 0;
-            text-align: center;
-            background: #fafafa;
-          }
-          .doc-label {
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 3px;
-          }
-          .doc-type {
-            font-size: 14px;
-            font-weight: bold;
-            margin-bottom: 3px;
-          }
-          .doc-number {
-            font-size: 13px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            color: #c00;
-          }
-          
-          /* INFO SECTION */
-          .info-box {
-            margin: 10px 0;
-            font-size: 11px;
-          }
-          .info-row {
-            display: flex;
-            justify-content: space-between;
-            margin: 3px 0;
-            border-bottom: 1px dotted #ccc;
-            padding-bottom: 2px;
-          }
-          .customer-box {
-            border: 1px dashed #999;
-            padding: 8px;
-            margin: 8px 0;
-            background: #fff;
-          }
-          .customer-label {
-            font-size: 9px;
-            text-transform: uppercase;
-            color: #666;
-            font-weight: bold;
-          }
-          .customer-name {
-            font-weight: bold;
-            text-transform: uppercase;
-            font-size: 12px;
-          }
-          .vehicle-box {
-            margin-top: 5px;
-            font-size: 10px;
-            color: #333;
-            font-style: italic;
-          }
-          
-          /* PRODUCTOS */
-          .items-title {
-            font-size: 11px;
-            font-weight: bold;
-            text-transform: uppercase;
-            border-bottom: 2px solid #000;
-            padding-bottom: 5px;
-            margin: 15px 0 10px 0;
-          }
-          .item {
-            margin: 8px 0;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #eee;
-          }
-          .item-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 3px;
-          }
-          .item-name {
-            flex: 1;
-            font-weight: bold;
-            padding-right: 10px;
-          }
-          .item-qty {
-            background: #000;
-            color: #fff;
-            padding: 2px 6px;
-            border-radius: 10px;
-            font-size: 10px;
-            min-width: 20px;
-            text-align: center;
-          }
-          .item-details {
-            display: flex;
-            justify-content: space-between;
-            font-size: 10px;
-            color: #666;
-          }
-          .item-total {
-            font-weight: bold;
-            color: #000;
-          }
-          
-          /* TOTALES */
-          .totals-box {
-            margin-top: 15px;
-            border-top: 2px solid #000;
-            padding-top: 10px;
-          }
-          .total-row {
-            display: flex;
-            justify-content: space-between;
-            margin: 5px 0;
-            font-size: 11px;
-          }
-          .total-final {
-            font-size: 14px;
-            font-weight: bold;
-            border-top: 2px solid #000;
-            border-bottom: 2px solid #000;
-            padding: 8px 0;
-            margin: 10px 0;
-            display: flex;
-            justify-content: space-between;
-          }
-          .total-amount {
-            color: #c00;
-            font-size: 16px;
-          }
-          
-          /* FOOTER */
-          .footer {
-            margin-top: 20px;
-            text-align: center;
-            font-size: 10px;
-            line-height: 1.5;
-            white-space: pre-line;
-            border-top: 1px dashed #999;
-            padding-top: 10px;
-          }
-          .legal-footer {
-            margin-top: 10px;
-            font-size: 9px;
-            color: #666;
-            text-align: center;
-          }
-          .cut-line {
-            border-top: 2px dashed #999;
-            margin: 15px 0 5px 0;
-            position: relative;
-          }
-          .cut-line::after {
-            content: "✂";
-            position: absolute;
-            left: 50%;
-            top: -10px;
-            background: #fff;
-            padding: 0 5px;
-            transform: translateX(-50%);
-          }
-          
-          @media print {
-            body { width: 80mm; padding: 0; }
-            .no-print { display: none; }
-          }
-        </style>
-      </head>
-      <body>
-        <!-- HEADER -->
-        <div class="header">
-          <div class="business-name">${businessName}</div>
-          ${ruc ? `<div class="ruc-box">RUC: ${ruc}</div>` : ''}
-          <div class="business-info">
-            ${address ? `<div>${address}</div>` : ''}
-            ${phone ? `<div>Tel: ${phone}</div>` : ''}
-          </div>
-        </div>
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NOTA DE VENTA - ${documentNumber}</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+font-family: 'Courier New', Courier, monospace;
+font-size: 12px;
+line-height: 1.4;
+width: 80mm;
+padding: 3mm;
+color: #000;
+background: #fff;
+-webkit-print-color-adjust: exact !important;
+print-color-adjust: exact !important;
+}
 
-        ${header ? `<div class="custom-header">${header}</div>` : ''}
+/* HEADER */
+.header {
+text-align: center;
+border-bottom: 3px double #000;
+padding-bottom: 10px;
+margin-bottom: 10px;
+}
+.business-name {
+font-size: 16px;
+font-weight: bold;
+text-transform: uppercase;
+margin-bottom: 5px;
+}
+.ruc-box {
+border: 2px solid #000;
+display: inline-block;
+padding: 2px 8px;
+margin: 5px 0;
+font-weight: bold;
+font-size: 11px;
+}
+.business-info {
+font-size: 11px;
+line-height: 1.5;
+}
 
-        <!-- DOCUMENTO -->
-        <div class="doc-box">
-          <div class="doc-label">DOCUMENTO</div>
-          <div class="doc-type">NOTA DE VENTA</div>
-          <div class="doc-number">N° ${documentNumber}</div>
-        </div>
+/* CUSTOM HEADER */
+.custom-header {
+text-align: center;
+font-style: italic;
+font-size: 10px;
+margin: 8px 0;
+padding: 5px;
+background: #f5f5f5;
+border-left: 3px solid #000;
+}
 
-        <!-- INFO -->
-        <div class="info-box">
-          <div class="info-row">
-            <span><strong>Fecha:</strong></span>
-            <span>${format(new Date(order.created_at), 'dd/MM/yyyy HH:mm', { locale: es })}</span>
-          </div>
-          <div class="info-row">
-            <span><strong>Orden #:</strong></span>
-            <span>${order.id.slice(0, 8).toUpperCase()}</span>
-          </div>
-          <div class="customer-box">
-            <div class="customer-label">CLIENTE</div>
-            <div class="customer-name">${(customer?.name || 'CONSUMIDOR FINAL').toUpperCase()}</div>
-            ${customer?.phone ? `<div style="font-size:10px; margin-top:3px;">Tel: ${customer.phone}</div>` : ''}
-            ${vehicle ? `
-              <div class="vehicle-box">
-                Vehículo: ${vehicle.brand} ${vehicle.model} | Placa: ${vehicle.plate}
-              </div>
-            ` : ''}
-          </div>
-        </div>
+/* DOCUMENTO BOX */
+.doc-box {
+border: 2px solid #000;
+padding: 10px;
+margin: 10px 0;
+text-align: center;
+background: #fafafa;
+}
+.doc-label {
+font-size: 10px;
+text-transform: uppercase;
+letter-spacing: 1px;
+margin-bottom: 3px;
+}
+.doc-type {
+font-size: 14px;
+font-weight: bold;
+margin-bottom: 3px;
+}
+.doc-number {
+font-size: 13px;
+font-weight: bold;
+letter-spacing: 1px;
+color: #c00;
+}
 
-        <!-- PRODUCTOS -->
-        <div class="items-title">DETALLE DE SERVICIOS Y REPUESTOS</div>
-        ${items.map(item => `
-          <div class="item">
-            <div class="item-header">
-              <span class="item-name">${item.description}</span>
-              <span class="item-qty">${item.quantity}</span>
-            </div>
-            <div class="item-details">
-              <span>$${(item.unit_price || 0).toFixed(2)} c/u</span>
-              <span class="item-total">$${(item.total_price || 0).toFixed(2)}</span>
-            </div>
-          </div>
-        `).join('')}
+/* INFO SECTION */
+.info-box {
+margin: 10px 0;
+font-size: 11px;
+}
+.info-row {
+display: flex;
+justify-content: space-between;
+margin: 3px 0;
+border-bottom: 1px dotted #ccc;
+padding-bottom: 2px;
+}
+.customer-box {
+border: 1px dashed #999;
+padding: 8px;
+margin: 8px 0;
+background: #fff;
+}
+.customer-label {
+font-size: 9px;
+text-transform: uppercase;
+color: #666;
+font-weight: bold;
+}
+.customer-name {
+font-weight: bold;
+text-transform: uppercase;
+font-size: 12px;
+}
+.vehicle-box {
+margin-top: 5px;
+font-size: 10px;
+color: #333;
+font-style: italic;
+}
 
-        ${items.length === 0 ? '<div style="text-align:center; color:#999; padding:10px;">Sin items registrados</div>' : ''}
+/* PRODUCTOS */
+.items-title {
+font-size: 11px;
+font-weight: bold;
+text-transform: uppercase;
+border-bottom: 2px solid #000;
+padding-bottom: 5px;
+margin: 15px 0 10px 0;
+}
+.item {
+margin: 8px 0;
+padding-bottom: 8px;
+border-bottom: 1px solid #eee;
+}
+.item-header {
+display: flex;
+justify-content: space-between;
+margin-bottom: 3px;
+}
+.item-name {
+flex: 1;
+font-weight: bold;
+padding-right: 10px;
+}
+.item-qty {
+background: #000;
+color: #fff;
+padding: 2px 6px;
+border-radius: 10px;
+font-size: 10px;
+min-width: 20px;
+text-align: center;
+}
+.item-details {
+display: flex;
+justify-content: space-between;
+font-size: 10px;
+color: #666;
+}
+.item-total {
+font-weight: bold;
+color: #000;
+}
 
-        <!-- TOTALES -->
-        <div class="totals-box">
-          <div class="total-row">
-            <span>Subtotal:</span>
-            <span>$${subtotal.toFixed(2)}</span>
-          </div>
-          <div class="total-row">
-            <span>IVA (${ivaPercent}%):</span>
-            <span>$${iva.toFixed(2)}</span>
-          </div>
-          <div class="total-final">
-            <span>TOTAL:</span>
-            <span class="total-amount">$${total.toFixed(2)}</span>
-          </div>
-        </div>
+/* TOTALES */
+.totals-box {
+margin-top: 15px;
+border-top: 2px solid #000;
+padding-top: 10px;
+}
+.total-row {
+display: flex;
+justify-content: space-between;
+margin: 5px 0;
+font-size: 11px;
+}
+.total-final {
+font-size: 14px;
+font-weight: bold;
+border-top: 2px solid #000;
+border-bottom: 2px solid #000;
+padding: 8px 0;
+margin: 10px 0;
+display: flex;
+justify-content: space-between;
+}
+.total-amount {
+color: #c00;
+font-size: 16px;
+}
 
-        <!-- FOOTER -->
-        <div class="footer">${footer}</div>
+/* FOOTER */
+.footer {
+margin-top: 20px;
+text-align: center;
+font-size: 10px;
+line-height: 1.5;
+white-space: pre-line;
+border-top: 1px dashed #999;
+padding-top: 10px;
+}
+.legal-footer {
+margin-top: 10px;
+font-size: 9px;
+color: #666;
+text-align: center;
+}
+.cut-line {
+border-top: 2px dashed #999;
+margin: 15px 0 5px 0;
+position: relative;
+}
+.cut-line::after {
+content: "✂";
+position: absolute;
+left: 50%;
+top: -10px;
+background: #fff;
+padding: 0 5px;
+transform: translateX(-50%);
+}
 
-        <div class="legal-footer">
-          --- ${businessName} ---<br>
-          Documento generado electrónicamente
-        </div>
+@media print {
+body { width: 80mm; padding: 0; }
+.no-print { display: none; }
+}
+</style>
+</head>
+<body>
+<!-- HEADER -->
+<div class="header">
+<div class="business-name">${businessName}</div>
+${ruc ? `<div class="ruc-box">RUC: ${ruc}</div>` : ''}
+<div class="business-info">
+${address ? `<div>${address}</div>` : ''}
+${phone ? `<div>Tel: ${phone}</div>` : ''}
+</div>
+</div>
 
-        <div class="cut-line"></div>
-      </body>
-      </html>
-    `;
+${header ? `<div class="custom-header">${header}</div>` : ''}
+
+<!-- DOCUMENTO -->
+<div class="doc-box">
+<div class="doc-label">DOCUMENTO</div>
+<div class="doc-type">NOTA DE VENTA</div>
+<div class="doc-number">N° ${documentNumber}</div>
+</div>
+
+<!-- INFO -->
+<div class="info-box">
+<div class="info-row">
+<span><strong>Fecha:</strong></span>
+<span>${format(new Date(order.created_at), 'dd/MM/yyyy HH:mm', { locale: es })}</span>
+</div>
+<div class="info-row">
+<span><strong>Orden #:</strong></span>
+<span>${order.id.slice(0, 8).toUpperCase()}</span>
+</div>
+<div class="customer-box">
+<div class="customer-label">CLIENTE</div>
+<div class="customer-name">${(customer?.name || 'CONSUMIDOR FINAL').toUpperCase()}</div>
+${customer?.phone ? `<div style="font-size:10px; margin-top:3px;">Tel: ${customer.phone}</div>` : ''}
+${vehicle ? `
+<div class="vehicle-box">
+Vehículo: ${vehicle.brand} ${vehicle.model} | Placa: ${vehicle.plate}
+</div>
+` : ''}
+</div>
+</div>
+
+<!-- PRODUCTOS -->
+<div class="items-title">DETALLE DE SERVICIOS Y REPUESTOS</div>
+${items.map(item => `
+<div class="item">
+<div class="item-header">
+<span class="item-name">${item.description}</span>
+<span class="item-qty">${item.quantity}</span>
+</div>
+<div class="item-details">
+<span>$${(item.unit_price || 0).toFixed(2)} c/u</span>
+<span class="item-total">$${(item.total_price || 0).toFixed(2)}</span>
+</div>
+</div>
+`).join('')}
+
+${items.length === 0 ? '<div style="text-align:center; color:#999; padding:10px;">Sin items registrados</div>' : ''}
+
+<!-- TOTALES -->
+<div class="totals-box">
+<div class="total-row">
+<span>Subtotal:</span>
+<span>$${subtotal.toFixed(2)}</span>
+</div>
+<div class="total-row">
+<span>IVA (${ivaPercent}%):</span>
+<span>$${iva.toFixed(2)}</span>
+</div>
+<div class="total-final">
+<span>TOTAL:</span>
+<span class="total-amount">$${total.toFixed(2)}</span>
+</div>
+</div>
+
+<!-- FOOTER -->
+<div class="footer">${footer}</div>
+
+<div class="legal-footer">
+--- ${businessName} ---<br>
+Documento generado electrónicamente
+</div>
+
+<div class="cut-line"></div>
+</body>
+</html>
+`;
 
     doc.open();
     doc.write(htmlContent);
@@ -404,22 +403,21 @@ export function NotaVenta80mm({
     };
   };
 
-  // Cálculos para la vista previa en pantalla
-  const total = items.reduce((sum, item) => sum + (item.total_price || 0), 0);
-  const ivaRate = ivaPercent / 100;
-  const subtotal = total / (1 + ivaRate);
-  const iva = total - subtotal;
+  // Cálculos corregidos para la vista previa en pantalla
+  const subtotal = items.reduce((sum, item) => sum + (item.total_price || 0), 0);
+  const iva = subtotal * (ivaPercent / 100);
+  const total = subtotal + iva;
 
   return (
     <div className="space-y-4">
       {/* Vista previa en pantalla (simulación del ticket 80mm) */}
       <div className="bg-gray-100 p-4 rounded-lg border-2 border-dashed border-gray-300">
-        <div 
-          className="bg-white p-4 shadow-lg mx-auto" 
-          style={{ 
-            width: '100%', 
-            maxWidth: '320px', 
-            fontFamily: 'Courier New, Courier, monospace', 
+        <div
+          className="bg-white p-4 shadow-lg mx-auto"
+          style={{
+            width: '100%',
+            maxWidth: '320px',
+            fontFamily: 'Courier New, Courier, monospace',
             fontSize: '12px',
             lineHeight: '1.4'
           }}
@@ -488,7 +486,7 @@ export function NotaVenta80mm({
           <div className="border-b-2 border-black font-bold text-xs mb-1 mt-3 pb-1">
             DETALLE DE SERVICIOS Y REPUESTOS
           </div>
-          
+
           {items.map((item, idx) => (
             <div key={idx} className="py-1 border-b border-gray-200">
               <div className="flex justify-between items-start mb-0.5">
