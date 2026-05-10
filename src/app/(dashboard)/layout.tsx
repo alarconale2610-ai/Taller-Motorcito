@@ -25,6 +25,46 @@ export default function DashboardLayout({
   const { selectedBranch, setSelectedBranch, branches, setBranches } = useBranchStore();
   const [loading, setLoading] = useState(true);
 
+  // ← NUEVO: watchdog de reconexión a la DB
+  useEffect(() => {
+    let dbWasDown = false;
+    let bannerEl: HTMLDivElement | null = null;
+
+    function mostrarBanner(visible: boolean) {
+      if (!bannerEl) {
+        bannerEl = document.createElement('div');
+        bannerEl.style.cssText = `
+          position:fixed;top:0;left:0;width:100%;z-index:9999;
+          background:#ef4444;color:#fff;text-align:center;
+          padding:10px;font-size:14px;font-family:sans-serif;
+        `;
+        bannerEl.textContent = '⚠️ Sin conexión a la base de datos. Reconectando...';
+        document.body.prepend(bannerEl);
+      }
+      bannerEl.style.display = visible ? 'block' : 'none';
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch('/api/health', { cache: 'no-store' });
+        if (!res.ok) {
+          dbWasDown = true;
+          mostrarBanner(true);
+        } else if (dbWasDown) {
+          mostrarBanner(false);
+          setTimeout(() => window.location.reload(), 1000);
+        }
+      } catch {
+        dbWasDown = true;
+        mostrarBanner(true);
+      }
+    }
+
+    const interval = setInterval(checkHealth, 5000);
+    return () => clearInterval(interval); // limpia al desmontar
+  }, []);
+  // ← FIN NUEVO
+
   useEffect(() => {
     if (!user) {
       router.push('/login');
@@ -38,9 +78,8 @@ export default function DashboardLayout({
         return;
       }
 
-      // ✅ CORREGIDO: Recargar si no tiene business_name (datos viejos del persist)
       const hasStaleData = selectedBranch && !selectedBranch.business_name;
-      
+
       if (branches.length > 0 && selectedBranch && !hasStaleData) {
         setLoading(false);
         return;
@@ -48,7 +87,7 @@ export default function DashboardLayout({
 
       try {
         const branchesList = await getBranches();
-        
+
         if (branchesList.length === 0) {
           toast({
             title: 'Error',
@@ -84,7 +123,7 @@ export default function DashboardLayout({
         if (user.branch_id) {
           branchToSelect = branchesWithConfig.find((b) => b.id === user.branch_id) || null;
         }
-        
+
         if (!branchToSelect) {
           branchToSelect = branchesWithConfig[0];
         }
